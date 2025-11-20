@@ -1,0 +1,7 @@
+{
+  "name": "SnapifY - Event Sharing",
+  "description": "Seamlessly capture, share, and manage event memories with AI-enhanced organization and real-time sharing.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
