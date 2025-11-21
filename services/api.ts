@@ -1,9 +1,5 @@
+import { User, Event, MediaItem, GuestbookEntry, Comment } from '../types';
 
-
-import { User, Event, MediaItem, GuestbookEntry } from '../types';
-
-// In production on Proxmox, this should point to your container's IP/Domain
-// For dev, it might be http://localhost:3001
 // @ts-ignore
 const API_URL = import.meta.env.VITE_API_URL || ''; 
 
@@ -36,15 +32,8 @@ export const api = {
     fetchEvents: async (userId?: string): Promise<Event[]> => {
         const url = userId ? `${API_URL}/api/events?userId=${encodeURIComponent(userId)}` : `${API_URL}/api/events`;
         const res = await fetch(url);
-        
-        if (!res.ok) {
-            // If there's an error (like "User ID required"), return empty array
-            // This prevents showing cached data when the API fails
-            return [];
-        }
-        
+        if (!res.ok) return [];
         const data = await res.json();
-        // Normalize boolean/number conversions from SQLite
         return data.map((e: any) => ({
             ...e,
             media: e.media.map((m: any) => ({
@@ -55,13 +44,8 @@ export const api = {
     },
     fetchEventById: async (eventId: string): Promise<Event> => {
         const res = await fetch(`${API_URL}/api/events/${eventId}`);
-        
-        if (!res.ok) {
-            throw new Error(`Failed to fetch event: ${res.status} ${res.statusText}`);
-        }
-        
+        if (!res.ok) throw new Error(`Failed to fetch event`);
         const data = await res.json();
-        // Normalize boolean/number conversions from SQLite
         return {
             ...data,
             media: data.media.map((m: any) => ({
@@ -98,12 +82,20 @@ export const api = {
         await fetch(`${API_URL}/api/events/${id}`, { method: 'DELETE' });
     },
 
-    // Guestbook
+    // Guestbook & Comments
     addGuestbookEntry: async (entry: GuestbookEntry): Promise<GuestbookEntry> => {
         const res = await fetch(`${API_URL}/api/guestbook`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(entry)
+        });
+        return res.json();
+    },
+    addComment: async (comment: Comment): Promise<Comment> => {
+        const res = await fetch(`${API_URL}/api/comments`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(comment)
         });
         return res.json();
     },
@@ -128,7 +120,6 @@ export const api = {
         return res.json();
     },
     uploadBase64Media: async (base64Data: string, metadata: Partial<MediaItem>, eventId: string): Promise<MediaItem> => {
-        // Convert Base64 to Blob
         const fetchRes = await fetch(base64Data);
         const blob = await fetchRes.blob();
         const file = new File([blob], "capture.jpg", { type: "image/jpeg" });

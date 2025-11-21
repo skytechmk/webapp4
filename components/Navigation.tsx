@@ -1,16 +1,18 @@
-
 import React, { useState } from 'react';
-import { Zap, Globe, Briefcase, Camera, User as UserIcon, LogOut, Settings } from 'lucide-react';
+import { Zap, Globe, Briefcase, Camera, User as UserIcon, LogOut, Settings, ChevronLeft, Shield, LogIn } from 'lucide-react';
 import { User, UserRole, Language, TranslateFn, TierLevel } from '../types';
 
 interface NavigationProps {
   currentUser: User | null;
   guestName: string;
   view: string;
+  currentEventTitle?: string;
   language: Language;
   onChangeLanguage: (lang: Language) => void;
   onLogout: () => void;
   onHome: () => void;
+  onBack: () => void;
+  onToAdmin?: () => void; // Added prop
   onOpenSettings?: () => void;
   t: TranslateFn;
 }
@@ -19,59 +21,70 @@ export const Navigation: React.FC<NavigationProps> = ({
   currentUser,
   guestName,
   view,
+  currentEventTitle,
   language,
   onChangeLanguage,
   onLogout,
   onHome,
+  onBack,
+  onToAdmin,
   onOpenSettings,
   t
 }) => {
   const [showLangMenu, setShowLangMenu] = useState(false);
   const canAccessSettings = currentUser && (currentUser.tier === TierLevel.STUDIO || currentUser.tier === TierLevel.PRO || currentUser.role === UserRole.PHOTOGRAPHER);
 
+  const isEventView = view === 'event';
+
   return (
-    <header className="bg-white border-b border-slate-200 sticky top-0 z-30">
+    <header className="bg-white/80 backdrop-blur-md border-b border-slate-200 sticky top-0 z-40 transition-all duration-200">
       <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between">
-        <button 
-            onClick={onHome} 
-            className="flex items-center space-x-2 font-bold text-xl text-slate-900 tracking-tight"
-        >
-            <div className="bg-indigo-600 p-1.5 rounded-lg">
-            <Zap size={18} className="text-white" />
-            </div>
-            <span className="hidden sm:inline">{t('appName')}</span>
-        </button>
         
-        <div className="flex items-center space-x-4">
-              {/* Language Selector */}
+        <div className="flex items-center gap-3 overflow-hidden">
+            {isEventView ? (
+                <button 
+                    onClick={onBack} 
+                    className="flex items-center justify-center w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors"
+                >
+                    <ChevronLeft size={20} />
+                </button>
+            ) : (
+                <button 
+                    onClick={onHome} 
+                    className="bg-indigo-600 p-1.5 rounded-lg flex-shrink-0"
+                >
+                    <Zap size={18} className="text-white" />
+                </button>
+            )}
+            
+            <div className="flex flex-col truncate">
+                {isEventView && currentEventTitle ? (
+                    <h1 className="text-lg font-bold text-slate-900 truncate leading-tight">{currentEventTitle}</h1>
+                ) : (
+                    <span className="text-xl font-bold text-slate-900 tracking-tight">{t('appName')}</span>
+                )}
+            </div>
+        </div>
+        
+        <div className="flex items-center space-x-2 sm:space-x-4 flex-shrink-0">
+            {/* Language */}
             <div className="relative">
                 <button 
                     onClick={() => setShowLangMenu(!showLangMenu)} 
-                    className="flex items-center text-sm text-slate-600 hover:text-slate-900 transition-colors"
-                    aria-haspopup="true"
-                    aria-expanded={showLangMenu}
+                    className="flex items-center text-sm text-slate-600 hover:text-slate-900 transition-colors p-2 rounded-md hover:bg-slate-50"
                 >
-                    <Globe size={18} className="mr-1"/>
-                    <span className="hidden sm:inline">{language.toUpperCase()}</span>
+                    <Globe size={18} />
+                    <span className="hidden sm:inline ml-1 font-medium">{language.toUpperCase()}</span>
                 </button>
                 {showLangMenu && (
                     <>
-                        <div className="fixed inset-0 z-40 cursor-default" onClick={() => setShowLangMenu(false)} />
-                        <div className="absolute top-full right-0 mt-2 w-32 bg-white rounded-lg shadow-xl border border-slate-200 overflow-hidden py-1 z-50 animate-in fade-in zoom-in-95 duration-100">
+                        <div className="fixed inset-0 z-40" onClick={() => setShowLangMenu(false)} />
+                        <div className="absolute top-full right-0 mt-2 w-32 bg-white rounded-xl shadow-xl border border-slate-100 overflow-hidden py-1 z-50 animate-in fade-in zoom-in-95 duration-100">
                             {(['en', 'mk', 'tr', 'sq'] as Language[]).map(lang => (
                                 <button 
                                     key={lang}
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        onChangeLanguage(lang);
-                                        setShowLangMenu(false);
-                                    }}
-                                    onTouchStart={(e) => {
-                                        e.stopPropagation();
-                                        onChangeLanguage(lang);
-                                        setShowLangMenu(false);
-                                    }}
-                                    className={`w-full text-left px-4 py-2 text-sm ${language === lang ? 'bg-indigo-50 text-indigo-600 font-bold' : 'text-slate-700 hover:bg-slate-50'} active:bg-slate-100`}
+                                    onClick={() => { onChangeLanguage(lang); setShowLangMenu(false); }}
+                                    className={`w-full text-left px-4 py-2 text-sm font-medium ${language === lang ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-50'}`}
                                 >
                                     {lang.toUpperCase()}
                                 </button>
@@ -82,46 +95,60 @@ export const Navigation: React.FC<NavigationProps> = ({
             </div>
 
             {currentUser ? (
-            <div className="flex items-center gap-3">
-                <div className="text-right hidden sm:block">
+            <div className="flex items-center gap-2">
+                <div className="text-right hidden sm:block mr-2">
                     <div className="text-sm font-bold text-slate-900 flex items-center justify-end gap-1">
                           {currentUser.name}
                           {currentUser.role === UserRole.PHOTOGRAPHER && <Briefcase size={12} className="text-amber-500" />}
                     </div>
-                    <div className={`text-xs font-medium ${currentUser.role === UserRole.PHOTOGRAPHER ? 'text-amber-600' : currentUser.role === UserRole.ADMIN ? 'text-red-600' : 'text-indigo-600'}`}>
-                        {currentUser.role === UserRole.ADMIN ? 'Admin' : `${currentUser.tier} Member`}
-                    </div>
                 </div>
-                <div className={`w-9 h-9 rounded-full flex items-center justify-center font-bold border ${currentUser.role === UserRole.PHOTOGRAPHER ? 'bg-slate-900 text-amber-400 border-amber-400' : currentUser.role === UserRole.ADMIN ? 'bg-red-100 text-red-700 border-red-200' : 'bg-indigo-100 text-indigo-700 border-indigo-200'}`}>
-                    {currentUser.role === UserRole.PHOTOGRAPHER ? <Camera size={16} /> : currentUser.name.charAt(0)}
-                </div>
+
+                {/* Admin Toggle */}
+                {currentUser.role === UserRole.ADMIN && onToAdmin && (
+                    <button
+                        onClick={onToAdmin}
+                        className="p-2 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors"
+                        title="Go to Admin Dashboard"
+                    >
+                        <Shield size={20} />
+                    </button>
+                )}
 
                 {canAccessSettings && (
                    <button 
                       onClick={onOpenSettings}
                       className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-full transition-colors"
-                      title={t('studioSettings')}
                    >
                       <Settings size={20} />
                    </button>
                 )}
+                
+                 <button 
+                    onClick={onLogout}
+                    className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-colors ml-1"
+                    title={t('logOut')}
+                >
+                    <LogOut size={20} />
+                </button>
             </div>
             ) : (
-            guestName && view === 'event' && (
-                <div className="flex items-center gap-2 text-sm text-slate-600 bg-slate-100 px-3 py-1.5 rounded-full">
-                    <UserIcon size={14} />
-                    <span>{t('guest')}: <strong>{guestName}</strong></span>
-                </div>
-            )
+                <>
+                    {guestName && isEventView && (
+                        <div className="hidden sm:flex items-center gap-2 text-xs font-bold text-slate-600 bg-slate-100 px-3 py-1.5 rounded-full border border-slate-200">
+                            <UserIcon size={12} />
+                            <span className="truncate max-w-[100px]">{guestName}</span>
+                        </div>
+                    )}
+                    {/* Sign In Button for Guests */}
+                    <button 
+                        onClick={onLogout} // onLogout resets view to landing
+                        className="flex items-center gap-2 px-4 py-2 rounded-full bg-slate-900 text-white text-sm font-bold hover:bg-slate-800 transition-colors"
+                    >
+                        <LogIn size={16} />
+                        <span className="hidden sm:inline">{t('signIn')}</span>
+                    </button>
+                </>
             )}
-            <button 
-            onClick={onLogout}
-            onTouchStart={onLogout}
-            className="p-3 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-colors touch-manipulation active:bg-slate-200"
-            title={currentUser ? t('logOut') : t('home')}
-            >
-            <LogOut size={20} />
-            </button>
         </div>
       </div>
     </header>

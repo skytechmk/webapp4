@@ -1,11 +1,10 @@
-
 import React from 'react';
-import { Plus, Sparkles, Zap, Clock, Calendar, Image as ImageIcon } from 'lucide-react';
-import { Event, User, UserRole, TranslateFn } from '../types';
+import { Plus, Sparkles, Zap, Clock, Calendar, Image as ImageIcon, User } from 'lucide-react';
+import { Event, User as UserType, UserRole, TranslateFn } from '../types';
 
 interface UserDashboardProps {
   events: Event[];
-  currentUser: User;
+  currentUser: UserType;
   onNewEvent: () => void;
   onSelectEvent: (id: string) => void;
   t: TranslateFn;
@@ -52,6 +51,8 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
         <div className="grid md:grid-cols-2 gap-6">
           {events.map(evt => {
             const expired = evt.expiresAt ? new Date() > new Date(evt.expiresAt) : false;
+            const isOwned = evt.hostId === currentUser?.id;
+            
             return (
               <div 
                 key={evt.id}
@@ -72,10 +73,16 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
                         <Clock size={10} className="mr-1" /> {t('expired')}
                       </span>
                     )}
-                    {evt.hostId === currentUser?.id && (
+                    {isOwned && (
                       <span className="bg-indigo-100 text-indigo-600 px-3 py-1 rounded-full text-xs font-bold border border-indigo-200">
                         {t('owner')}
                       </span>
+                    )}
+                    {/* Admin View: Show if event belongs to another user */}
+                    {!isOwned && currentUser.role === UserRole.ADMIN && (
+                         <span className="bg-amber-100 text-amber-700 px-3 py-1 rounded-full text-xs font-bold border border-amber-200 flex items-center">
+                            <User size={10} className="mr-1" /> User Event
+                         </span>
                     )}
                   </div>
                 </div>

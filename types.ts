@@ -1,5 +1,3 @@
-
-
 export enum UserRole {
   ADMIN = 'ADMIN',
   USER = 'USER',
@@ -90,8 +88,18 @@ export interface User {
   watermarkOffsetY?: number; // 0 to 50 (%)
 }
 
+export interface Comment {
+  id: string;
+  mediaId: string;
+  eventId: string;
+  senderName: string;
+  text: string;
+  createdAt: string;
+}
+
 export interface MediaItem {
   id: string;
+  eventId: string;
   type: 'image' | 'video';
   url: string;
   previewUrl?: string; // For videos (transcoded 720p or thumbnail)
@@ -102,6 +110,7 @@ export interface MediaItem {
   isWatermarked?: boolean;
   watermarkText?: string;
   likes?: number; // Enhanced Feature: Social Reaction
+  comments?: Comment[]; // Enhanced Feature: Comments
 }
 
 export interface GuestbookEntry {

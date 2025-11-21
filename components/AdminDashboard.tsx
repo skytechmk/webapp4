@@ -9,7 +9,8 @@ import {
   ResponsiveContainer 
 } from 'recharts';
 import { User, UserRole, TierLevel, Event, TranslateFn, MediaItem } from '../types';
-import { Trash2, UserCog, HardDrive, Zap, Calendar, Image as ImageIcon, X, Clock, Eye, Plus, Edit, Save, Camera, Briefcase, AlertTriangle, ZoomIn, Download, Lock, ExternalLink, ArrowLeft } from 'lucide-react';
+// Added 'HardDrive' to the import list
+import { Trash2, HardDrive, Zap, Calendar, Image as ImageIcon, X, Clock, Eye, Plus, Edit, Save, Camera, Briefcase, AlertTriangle, ZoomIn, Download, Lock, ArrowLeft, LogOut } from 'lucide-react';
 
 interface AdminDashboardProps {
   users: User[];
@@ -23,6 +24,7 @@ interface AdminDashboardProps {
   onNewEvent: () => void;
   onDownloadEvent: (event: Event) => void;
   onClose: () => void;
+  onLogout: () => void;
   t: TranslateFn;
 }
 
@@ -49,6 +51,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onNewEvent,
   onDownloadEvent,
   onClose,
+  onLogout,
   t
 }) => {
   const [activeTab, setActiveTab] = useState<Tab>('users');
@@ -78,7 +81,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     limit: u.storageLimitMb
   }));
 
-  // Handle Escape Key for Preview Modal
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -98,19 +100,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     return new Date() > new Date(dateStr);
   };
 
-  // Get events for a specific user
   const getUserEvents = (userId: string) => {
-    console.log('Debug: Filtering events for user ID:', userId);
-    console.log('Debug: Available events:', events.map(e => ({ id: e.id, hostId: e.hostId, title: e.title })));
-    
-    const userEvents = events.filter(event => {
-      const match = event.hostId === userId;
-      console.log(`Debug: Event ${event.id} (host: ${event.hostId}) matches user ${userId}: ${match}`);
-      return match;
-    });
-    
-    console.log('Debug: Found events for user:', userEvents);
-    return userEvents;
+    return events.filter(event => event.hostId === userId);
+  };
+
+  const getUserEventCount = (userId: string) => {
+    return events.filter(e => e.hostId === userId).length;
   };
 
   // --- Delete Logic ---
@@ -121,7 +116,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       type: 'user',
       id: user.id,
       title: 'Delete User Account',
-      message: `Are you sure you want to delete ${user.name}? This will permanently remove their account and all associated events and data. This action cannot be undone.`
+      message: `Are you sure you want to delete ${user.name}? This will permanently remove their account AND all ${getUserEventCount(user.id)} events associated with them.`
     });
   };
 
@@ -155,19 +150,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       onDeleteUser(id);
     } else if (type === 'event') {
       onDeleteEvent(id);
-      // If the deleted event was open in inspector, close it
       if (selectedEvent?.id === id) {
         setSelectedEvent(null);
       }
     } else if (type === 'media' && parentId) {
       onDeleteMedia(parentId, id);
-      // Update local selected event state to remove the item immediately from view
       setSelectedEvent(prev => prev ? ({
         ...prev,
         media: prev.media.filter(m => m.id !== id)
       }) : null);
       
-      // Close preview if the deleted item was being previewed
       if (previewMedia?.id === id) {
         setPreviewMedia(null);
       }
@@ -184,7 +176,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         setEditExpiryType('unlimited');
     } else {
         setEditExpiryType('custom');
-        // Default values for custom
         setEditDurationVal(30);
         setEditDurationUnit('minutes');
     }
@@ -200,9 +191,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       } else if (editExpiryType === 'immediate') {
           newExpiresAt = new Date().toISOString();
       } else {
-          // Calculate new expiration from NOW based on inputs
           const now = new Date().getTime();
-          let multiplier = 1000; // seconds
+          let multiplier = 1000; 
           if (editDurationUnit === 'minutes') multiplier = 60 * 1000;
           if (editDurationUnit === 'hours') multiplier = 60 * 60 * 1000;
           if (editDurationUnit === 'days') multiplier = 24 * 60 * 60 * 1000;
@@ -245,7 +235,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setActiveTab('users');
   };
 
-  // Render user events view
   const renderUserEvents = () => {
     if (!selectedUserForEvents) return null;
     
@@ -393,9 +382,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     {t('events')}
                 </button>
             </div>
-            <button onClick={onClose} className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-indigo-600 text-white hover:bg-indigo-700 rounded-lg transition-colors border border-indigo-500">
-              ← {t('backToAdmin')}
-            </button>
+            
+            <div className="flex gap-2">
+                <button 
+                    onClick={onClose} 
+                    className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-indigo-600 text-white hover:bg-indigo-700 rounded-lg transition-colors border border-indigo-500 cursor-pointer shadow-sm"
+                >
+                    ← {t('backToApp')}
+                </button>
+                <button 
+                    onClick={onLogout} 
+                    className="p-2 text-slate-500 hover:text-red-600 hover:bg-red-50 bg-white rounded-lg border border-slate-200 transition-colors shadow-sm"
+                    title={t('logOut')}
+                >
+                    <LogOut size={20} />
+                </button>
+            </div>
         </div>
       </header>
 
@@ -441,6 +443,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <thead className="bg-slate-50">
                     <tr>
                     <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">{t('users')}</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Events</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">{t('tier')}</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">{t('storage')}</th>
                     <th className="px-6 py-3 text-right text-xs font-medium text-slate-500 uppercase tracking-wider">{t('actions')}</th>
@@ -464,18 +467,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 )}
                                 {user.role === UserRole.PHOTOGRAPHER && (
                                     <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-200 uppercase tracking-wide">
-                                        PHOTOGRAPHER
-                                    </span>
-                                )}
-                                {user.role === UserRole.USER && (
-                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200 uppercase tracking-wide">
-                                        USER
+                                        PRO
                                     </span>
                                 )}
                             </div>
                             <div className="text-sm text-slate-500">{user.email}</div>
                             </div>
                         </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-700 font-medium">
+                            {getUserEventCount(user.id)}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                         <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
@@ -490,7 +491,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <div className="w-full bg-slate-200 rounded-full h-2.5 mb-1 max-w-[100px]">
                             <div className="bg-indigo-600 h-2.5 rounded-full" style={{ width: `${Math.min((user.storageUsedMb / user.storageLimitMb) * 100, 100)}%` }}></div>
                         </div>
-                        {user.storageUsedMb.toFixed(1)} / {user.storageLimitMb > 10000 ? '∞' : user.storageLimitMb} MB
+                        {user.storageUsedMb.toFixed(1)} MB
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium flex justify-end gap-2">
                         {user.role !== UserRole.ADMIN && (
@@ -547,6 +548,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       ) : (
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+            {/* ... (System Events Table remains the same) ... */}
             <div className="p-6 border-b border-slate-100 flex justify-between items-center">
                 <h3 className="text-lg font-semibold text-slate-900">{t('systemEvents')}</h3>
             </div>
@@ -607,7 +609,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                            <button 
                              onClick={() => onDownloadEvent(evt)}
                              className="text-green-600 hover:bg-green-50 p-2 rounded-full transition-colors"
-                             title={t('downloadAll')}
                            >
                              <Download size={18} />
                            </button>
@@ -641,7 +642,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       )}
 
-      {/* Edit User Modal */}
+      {/* ... (Edit Modals, Media Inspector, Delete Confirmation - Same as previous) ... */}
       {editingUser && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
             <div className="bg-white w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
@@ -657,7 +658,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <p className="text-lg font-medium text-slate-900">{editingUser.name}</p>
                     </div>
                     
-                    {/* Role Selection */}
                     <div>
                         <label className="block text-sm font-bold text-slate-700 mb-2">User Role</label>
                         <select 
@@ -669,12 +669,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 <option key={role} value={role}>{role}</option>
                             ))}
                         </select>
-                        <p className="text-xs text-slate-500 mt-2">
-                            Set to PHOTOGRAPHER for Studio access.
-                        </p>
                     </div>
 
-                    {/* Tier Selection */}
                     <div>
                         <label className="block text-sm font-bold text-slate-700 mb-2">Subscription Tier</label>
                         <select 
@@ -686,9 +682,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 <option key={tier} value={tier}>{tier}</option>
                             ))}
                         </select>
-                        <p className="text-xs text-slate-500 mt-2">
-                            Changing the tier will automatically update storage limits.
-                        </p>
                     </div>
 
                     <button 
@@ -702,7 +695,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
         </div>
       )}
-
+      
       {/* Edit Event Modal */}
       {editingEvent && (
           <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
