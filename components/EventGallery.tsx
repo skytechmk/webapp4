@@ -117,14 +117,17 @@ export const EventGallery: React.FC<EventGalleryProps> = ({
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [isSlideshowPlaying, setIsSlideshowPlaying] = useState(false);
   
+  // Sliding Logic State
+  const [dragOffset, setDragOffset] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const [isAnimating, setIsAnimating] = useState(false);
+  const [isSnapping, setIsSnapping] = useState(false); // Prevent transition during index reset
+  const touchStartRef = useRef<number | null>(null);
+  
   // Comments State
   const [commentText, setCommentText] = useState('');
   const [showShareModal, setShowShareModal] = useState(false);
 
-  // Touch/Swipe State for Lightbox
-  const touchStartRef = useRef<number | null>(null);
-  const touchEndRef = useRef<number | null>(null);
-  
   const [activeTab, setActiveTab] = useState<'gallery' | 'guestbook'>('gallery');
   
   // Guestbook State
@@ -246,6 +249,7 @@ export const EventGallery: React.FC<EventGalleryProps> = ({
   const openLightbox = (index: number) => {
       setLightboxIndex(index);
       setIsSlideshowPlaying(false);
+      setDragOffset(0);
       document.body.style.overflow = 'hidden';
   };
 
@@ -256,29 +260,85 @@ export const EventGallery: React.FC<EventGalleryProps> = ({
   }, []);
 
   const navigateLightbox = useCallback((direction: 'next' | 'prev') => {
-      if (lightboxIndex === null) return;
-      const len = displayMedia.length;
-      if (direction === 'next') {
-          setLightboxIndex((lightboxIndex + 1) % len);
-      } else {
-          setLightboxIndex((lightboxIndex - 1 + len) % len);
+      if (lightboxIndex === null || isAnimating) return;
+      
+      // We use full window width for translation logic
+      const windowWidth = window.innerWidth;
+      // If going Next, we want to slide to -200% (from -100%). Delta is -100vw.
+      // If going Prev, we want to slide to 0% (from -100%). Delta is +100vw.
+      
+      // However, dragOffset is *added* to the base -100vw.
+      // So target dragOffset should be -windowWidth (for Next) or +windowWidth (for Prev).
+      const targetOffset = direction === 'next' ? -windowWidth : windowWidth;
+      
+      setIsAnimating(true);
+      setDragOffset(targetOffset);
+
+      setTimeout(() => {
+          const len = displayMedia.length;
+          let newIndex;
+          if (direction === 'next') {
+              newIndex = (lightboxIndex + 1) % len;
+          } else {
+              newIndex = (lightboxIndex - 1 + len) % len;
+          }
+          
+          // CRITICAL: Update index AND reset offset instantly (no transition)
+          // This creates the infinite scroll illusion
+          setIsSnapping(true); // Disable transitions
+          
+          // Force update order
+          setLightboxIndex(newIndex);
+          setDragOffset(0);
+          
+          // Unlock animation lock
+          setIsAnimating(false); 
+
+          // Re-enable transitions after a tiny delay to allow React to repaint the DOM at the new 0 offset
+          setTimeout(() => {
+              setIsSnapping(false);
+          }, 50);
+      }, 300); // Match CSS transition duration
+  }, [lightboxIndex, displayMedia.length, isAnimating]);
+
+  // --- Unified Pointer Handlers for Sliding (Touch + Mouse) ---
+  const onPointerDown = (e: React.PointerEvent) => {
+      if (isAnimating) return;
+      // Prevent default to avoid scrolling / text selection issues
+      // e.preventDefault(); // Note: Be careful with blocking clicks on children, handle carefully
+      touchStartRef.current = e.clientX;
+      setIsDragging(true);
+  };
+
+  const onPointerMove = (e: React.PointerEvent) => {
+      if (!touchStartRef.current || isAnimating || !isDragging) return;
+      // e.preventDefault();
+      const currentX = e.clientX;
+      const diff = currentX - touchStartRef.current;
+      setDragOffset(diff);
+  };
+
+  const onPointerUp = () => {
+      if (!touchStartRef.current || isAnimating || !isDragging) {
+           setIsDragging(false);
+           return;
       }
-  }, [lightboxIndex, displayMedia.length]);
-
-  const onTouchStart = (e: React.TouchEvent) => {
-      touchEndRef.current = null;
-      touchStartRef.current = e.targetTouches[0].clientX;
-  };
-
-  const onTouchMove = (e: React.TouchEvent) => {
-      touchEndRef.current = e.targetTouches[0].clientX;
-  };
-
-  const onTouchEnd = () => {
-      if (!touchStartRef.current || !touchEndRef.current) return;
-      const distance = touchStartRef.current - touchEndRef.current;
-      if (distance > 50) navigateLightbox('next');
-      else if (distance < -50) navigateLightbox('prev');
+      setIsDragging(false);
+      
+      const threshold = window.innerWidth / 4; // Reduced threshold for easier desktop swipe
+      
+      if (dragOffset < -threshold) {
+          navigateLightbox('next');
+      } else if (dragOffset > threshold) {
+          navigateLightbox('prev');
+      } else {
+          // Snap back to center if threshold not met
+          setIsAnimating(true);
+          setDragOffset(0);
+          setTimeout(() => setIsAnimating(false), 300);
+      }
+      
+      touchStartRef.current = null;
   };
 
   useEffect(() => {
@@ -415,7 +475,6 @@ export const EventGallery: React.FC<EventGalleryProps> = ({
   };
 
   if (isPinLocked) {
-      // ... (Pin Lock UI) ...
       return (
           <div className="min-h-[60vh] flex items-center justify-center px-4">
               <div className="bg-white p-8 rounded-3xl shadow-xl max-w-sm w-full text-center border border-slate-200">
@@ -434,7 +493,6 @@ export const EventGallery: React.FC<EventGalleryProps> = ({
   }
 
   if (isEventExpired && currentUser?.role !== UserRole.ADMIN && currentUser?.id !== event.hostId) {
-    // ... (Expired UI) ...
     return (
       <main className="max-w-5xl mx-auto px-4 py-20 text-center">
           <h1 className="text-3xl font-bold text-slate-900 mb-4">{t('eventExpiredTitle')}</h1>
@@ -548,6 +606,7 @@ export const EventGallery: React.FC<EventGalleryProps> = ({
 
       {isFindMeOpen && (
           <div className="bg-white p-4 rounded-2xl shadow-md border border-indigo-100 mb-6 animate-in slide-in-from-top-2 flex flex-col items-center text-center">
+              {/* ... Find Me Content ... */}
               <h4 className="font-bold text-slate-900 mb-2">{t('findMeTitle')}</h4>
               <p className="text-sm text-slate-500 mb-4">{t('findMeDesc')}</p>
               {isScanning ? (
@@ -581,7 +640,22 @@ export const EventGallery: React.FC<EventGalleryProps> = ({
               {item.type === 'video' ? (
                   <VideoGridItem item={item} onClick={() => !isBulkDeleteMode && openLightbox(index)} />
               ) : (
-                <img src={item.url} alt={item.caption} className="w-full h-auto object-cover" loading="lazy" />
+                // Updated Image Grid Item with Fallback
+                <div className="w-full h-auto bg-slate-200 relative min-h-[100px]">
+                    <img 
+                        src={item.previewUrl || item.url} 
+                        alt={item.caption} 
+                        className="w-full h-full object-cover" 
+                        loading="lazy" 
+                        onError={(e) => {
+                            e.currentTarget.style.display = 'none';
+                            e.currentTarget.parentElement?.querySelector('.error-placeholder')?.classList.remove('hidden');
+                        }}
+                    />
+                    <div className="error-placeholder hidden absolute inset-0 flex items-center justify-center text-slate-400 p-2 text-center bg-slate-100">
+                        <span className="text-[10px] font-bold">{item.caption || 'Image unavailable'}</span>
+                    </div>
+                </div>
               )}
               {item.isWatermarked && item.watermarkText && (
                 <div className="absolute bottom-2 right-2 pointer-events-none">
@@ -648,6 +722,7 @@ export const EventGallery: React.FC<EventGalleryProps> = ({
       )}
 
       <div className="fixed bottom-8 left-0 right-0 flex justify-center z-40 pointer-events-auto">
+        {/* ... (Bottom controls remain same) ... */}
         <div className="flex items-center gap-3 bg-white/90 backdrop-blur-xl p-2.5 rounded-full shadow-2xl border border-slate-200 ring-4 ring-black/5">
           {currentUser?.role === UserRole.PHOTOGRAPHER && (
             <button onClick={() => setApplyWatermark(!applyWatermark)} className={`w-12 h-12 rounded-full flex items-center justify-center transition-colors ${applyWatermark ? 'bg-amber-500 text-white' : 'bg-slate-100 text-slate-400'}`} title={t('watermark')}><ShieldCheck size={20} /></button>
@@ -664,9 +739,16 @@ export const EventGallery: React.FC<EventGalleryProps> = ({
         </div>
       </div>
 
-      {/* Lightbox / Slideshow Modal */}
+      {/* UPDATED Lightbox / Slideshow Modal with Sliding */}
       {lightboxIndex !== null && (
-          <div className="fixed inset-0 z-[60] bg-black flex items-center justify-center backdrop-blur-2xl animate-in fade-in duration-200" onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
+          <div 
+            className="fixed inset-0 z-[60] bg-black flex items-center justify-center backdrop-blur-2xl animate-in fade-in duration-200 touch-none" 
+            onPointerDown={onPointerDown} 
+            onPointerMove={onPointerMove} 
+            onPointerUp={onPointerUp}
+            onPointerCancel={onPointerUp}
+            onPointerLeave={onPointerUp}
+          >
               <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-center z-50 bg-gradient-to-b from-black/60 to-transparent">
                   <div className="text-white/80 text-sm font-medium">{lightboxIndex + 1} / {displayMedia.length}</div>
                   <div className="flex gap-3">
@@ -678,17 +760,46 @@ export const EventGallery: React.FC<EventGalleryProps> = ({
               <button onClick={() => navigateLightbox('prev')} className="absolute left-4 p-3 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors z-50 hidden md:block"><ChevronLeft size={32} /></button>
               <button onClick={() => navigateLightbox('next')} className="absolute right-4 p-3 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors z-50 hidden md:block"><ChevronRight size={32} /></button>
               
-              <div className="w-full h-full flex flex-col items-center justify-center p-4 md:p-10 relative" onClick={closeLightbox}>
-                  <div className="relative max-w-full max-h-[85vh] flex flex-col items-center justify-center flex-1" onClick={e => e.stopPropagation()}>
-                      {displayMedia[lightboxIndex].type === 'video' ? (
-                          <video src={displayMedia[lightboxIndex].url} controls autoPlay={isSlideshowPlaying} className="max-w-full max-h-full rounded-lg shadow-2xl" />
-                      ) : (
-                          <img src={displayMedia[lightboxIndex].url} alt={displayMedia[lightboxIndex].caption} className="max-w-full max-h-full object-contain rounded-lg shadow-2xl" />
-                      )}
+              <div className="w-full h-full relative overflow-hidden" onClick={closeLightbox}>
+                  {/* Sliding Container */}
+                  <div 
+                    className="absolute top-0 left-0 h-full flex items-center"
+                    style={{
+                        transform: `translateX(calc(-100vw + ${dragOffset}px))`, // -100vw centers the middle slide
+                        transition: (isDragging || isSnapping) ? 'none' : 'transform 0.3s ease-out',
+                        width: '300vw', // Explicit 3 screens wide
+                    }}
+                    onClick={e => e.stopPropagation()}
+                  >
+                      {/* Render 3 Slides: Prev, Curr, Next */}
+                      {[-1, 0, 1].map((offset) => {
+                          const targetIndex = (lightboxIndex + offset + displayMedia.length) % displayMedia.length;
+                          const item = displayMedia[targetIndex];
+                          return (
+                              <div key={`${targetIndex}-${offset}`} className="w-[100vw] h-full flex-shrink-0 flex items-center justify-center p-2 md:p-10">
+                                  {item.type === 'video' ? (
+                                      <video 
+                                        src={item.url} 
+                                        controls 
+                                        autoPlay={offset === 0 && isSlideshowPlaying} 
+                                        className="max-w-full max-h-full rounded-lg shadow-2xl object-contain bg-black" 
+                                        playsInline
+                                      />
+                                  ) : (
+                                      <img 
+                                        src={item.previewUrl || item.url} 
+                                        alt={item.caption} 
+                                        className="max-w-full max-h-full object-contain rounded-lg shadow-2xl select-none"
+                                        draggable={false}
+                                      />
+                                  )}
+                              </div>
+                          );
+                      })}
                   </div>
                   
-                  {/* Caption & Comments Overlay */}
-                  <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 via-black/70 to-transparent p-6 flex flex-col gap-4 max-h-[40vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                  {/* Caption Overlay (Static on top) */}
+                  <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 via-black/70 to-transparent p-6 flex flex-col gap-4 max-h-[40vh] overflow-y-auto pointer-events-auto" onClick={e => e.stopPropagation()}>
                       <div className="text-center mb-2">
                           <p className="text-white text-lg font-bold drop-shadow-md">{displayMedia[lightboxIndex].caption}</p>
                           <p className="text-white/60 text-sm mt-1">{new Date(displayMedia[lightboxIndex].uploadedAt).toLocaleDateString()} • {displayMedia[lightboxIndex].uploaderName}</p>

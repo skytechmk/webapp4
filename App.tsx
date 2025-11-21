@@ -66,78 +66,58 @@ export default function App() {
   // -- Initialization --
   const loadInitialData = async () => {
       try {
-          const users = await api.fetchUsers();
-          setAllUsers(users);
-
+          const token = localStorage.getItem('snapify_token');
           const storedUserId = localStorage.getItem('snapify_user_id');
-          let currentUserFromStorage = null;
           
-          if (storedUserId) {
-              const user = users.find(u => u.id === storedUserId);
-              if (user) {
-                  currentUserFromStorage = user;
-                  setCurrentUser(user);
-              }
-          }
-          
-          if (!storedUserId && isKnownDevice()) {
-              const storedUserIdFromFingerprint = getStoredUserId();
-              if (storedUserIdFromFingerprint) {
-                  const user = users.find(u => u.id === storedUserIdFromFingerprint);
-                  if (user) {
-                      currentUserFromStorage = user;
-                      setCurrentUser(user);
-                      localStorage.setItem('snapify_user_id', user.id);
-                  }
-              }
-          }
+          let currentUserFromStorage: User | null = null;
 
-          let evts: Event[];
-          if (currentUserFromStorage) {
-              if (currentUserFromStorage.role === UserRole.ADMIN) {
-                  evts = await api.fetchEvents(currentUserFromStorage.id); 
-              } else {
-                  evts = await api.fetchEvents(currentUserFromStorage.id);
+          if (token && storedUserId) {
+              try {
+                  const savedUserStr = localStorage.getItem('snapify_user_obj');
+                  if (savedUserStr) {
+                      currentUserFromStorage = JSON.parse(savedUserStr);
+                      setCurrentUser(currentUserFromStorage);
+                  }
+
+                  const eventsData = await api.fetchEvents();
+                  setEvents(eventsData);
+                  
+                  // CRITICAL FIX: If Admin, fetch all users immediately
+                  if (currentUserFromStorage?.role === UserRole.ADMIN) {
+                      const usersData = await api.fetchUsers();
+                      setAllUsers(usersData);
+                  }
+              } catch (e) {
+                  console.warn("Session expired or invalid", e);
+                  localStorage.removeItem('snapify_token');
+                  localStorage.removeItem('snapify_user_id');
+                  localStorage.removeItem('snapify_user_obj');
+                  currentUserFromStorage = null;
               }
-          } else {
-              evts = await api.fetchEvents();
           }
-          setEvents(evts);
-          
-          const storedLang = localStorage.getItem('snapify_lang') as Language;
-          if (storedLang && TRANSLATIONS[storedLang]) setLanguage(storedLang);
 
           const params = new URLSearchParams(window.location.search);
           const sharedEventId = params.get('event');
-          let hasSharedEvent = false;
           
           if (sharedEventId) {
                try {
                    const sharedEvent = await api.fetchEventById(sharedEventId);
                    if (sharedEvent) {
-                       if (!evts.find(e => e.id === sharedEventId)) {
-                           setEvents(prev => [...prev, sharedEvent]);
-                       }
+                       setEvents(prev => {
+                           if (!prev.find(e => e.id === sharedEventId)) return [...prev, sharedEvent];
+                           return prev;
+                       });
                        setCurrentEventId(sharedEventId);
                        setView('event');
                        incrementEventViews(sharedEventId, [sharedEvent]);
-                       hasSharedEvent = true;
                    }
                } catch (error) {
                    console.error("Failed to fetch shared event", error);
                }
-          }
-          
-          if (!hasSharedEvent) {
-              if (storedUserId || currentUserFromStorage) {
-                  if (currentUserFromStorage?.role === UserRole.ADMIN) {
-                      setView('admin');
-                  } else {
-                      setView('dashboard');
-                  }
-              } else {
-                  setView('landing');
-              }
+          } else if (currentUserFromStorage) {
+              setView(currentUserFromStorage.role === UserRole.ADMIN ? 'admin' : 'dashboard');
+          } else {
+              setView('landing');
           }
 
       } catch (err) {
@@ -173,37 +153,33 @@ export default function App() {
           const decoded: any = jwtDecode(response.credential);
           const email = decoded.email;
           const name = decoded.name;
-          const users = await api.fetchUsers();
-          setAllUsers(users);
-          let user = users.find(u => u.email.toLowerCase() === email.toLowerCase());
-
-          if (!user) {
-             const isAdmin = email.toLowerCase() === (env.VITE_ADMIN_EMAIL || '').toLowerCase();
-             user = {
-                 id: `user-${Date.now()}`,
-                 name: name,
-                 email: email,
-                 role: isAdmin ? UserRole.ADMIN : UserRole.USER,
-                 tier: isAdmin ? TierLevel.PRO : TierLevel.FREE,
-                 storageUsedMb: 0,
-                 storageLimitMb: isAdmin ? Infinity : TIER_CONFIG[TierLevel.FREE].storageLimitMb,
-                 joinedDate: new Date().toISOString().split('T')[0]
-             };
-             user = await api.createUser(user);
-             setAllUsers(prev => [...prev, user!]);
-          } else {
-               const isAdmin = email.toLowerCase() === (env.VITE_ADMIN_EMAIL || '').toLowerCase();
-               if (isAdmin && user.role !== UserRole.ADMIN) {
-                   user = { ...user, role: UserRole.ADMIN, tier: TierLevel.PRO, storageLimitMb: Infinity };
-                   await api.updateUser(user);
-               }
+          
+          try {
+              const res = await api.googleLogin(email, name);
+              finalizeLogin(res.user, res.token);
+          } catch (e) {
+              console.error("Backend auth failed", e);
+              setAuthError("Authentication failed");
           }
-          setCurrentUser(user);
-          localStorage.setItem('snapify_user_id', user.id);
-          setView(user.role === UserRole.ADMIN ? 'admin' : 'dashboard');
       } catch (error) {
           console.error("Google Login Error", error);
           setAuthError(t('authErrorInvalid'));
+      }
+  };
+
+  const finalizeLogin = (user: User, token: string) => {
+      setCurrentUser(user);
+      localStorage.setItem('snapify_token', token);
+      localStorage.setItem('snapify_user_id', user.id);
+      localStorage.setItem('snapify_user_obj', JSON.stringify(user));
+      
+      api.fetchEvents().then(setEvents);
+      
+      if (user.role === UserRole.ADMIN) {
+          api.fetchUsers().then(setAllUsers);
+          setView('admin');
+      } else {
+          setView('dashboard');
       }
   };
 
@@ -217,77 +193,51 @@ export default function App() {
       if (evt) await api.updateEvent({ ...evt, views: (evt.views || 0) + 1 });
   };
 
-  // -- Translations --
   useEffect(() => { localStorage.setItem('snapify_lang', language); }, [language]);
   const t: TranslateFn = (key: string) => {
     return TRANSLATIONS[language][key] || TRANSLATIONS['en'][key] || key;
   };
   const changeLanguage = (lang: Language) => setLanguage(lang);
 
-  // -- Computed Properties --
   const activeEvent = events.find(e => e.id === currentEventId);
   const isOwner = currentUser && activeEvent && currentUser.id === activeEvent.hostId;
   const isEventExpired = activeEvent?.expiresAt ? new Date() > new Date(activeEvent.expiresAt) : false;
-  const hostUser = allUsers.find(u => u.id === activeEvent?.hostId);
+  const hostUser = allUsers.find(u => u.id === activeEvent?.hostId) || (currentUser?.id === activeEvent?.hostId ? currentUser : undefined);
   const isHostPhotographer = hostUser?.role === UserRole.PHOTOGRAPHER;
 
-  // -- Handlers --
   const handleEmailAuth = async (data: any, isSignUp: boolean) => {
     if (isLoggingIn) return;
     setAuthError('');
     setIsLoggingIn(true);
+    
     try {
+        const { email, password, name, isPhotographer, studioName } = data;
+        
         if (isSignUp) {
-            const { email, password, name, isPhotographer, studioName } = data;
-            if (allUsers.some(u => u.email.toLowerCase() === email.toLowerCase())) {
-                setAuthError(t('authErrorEmail'));
-                setIsLoggingIn(false);
-                return;
-            }
-            const tier = TierLevel.FREE;
-            const config = TIER_CONFIG[tier];
-            const isAdmin = email.toLowerCase() === (env.VITE_ADMIN_EMAIL || '').toLowerCase();
             const newUser: User = {
                 id: `user-${Date.now()}`,
                 name: name,
                 email: email,
-                role: isAdmin ? UserRole.ADMIN : (isPhotographer ? UserRole.PHOTOGRAPHER : UserRole.USER),
-                tier: isAdmin ? TierLevel.PRO : tier,
+                role: UserRole.USER, 
+                tier: TierLevel.FREE,
                 storageUsedMb: 0,
-                storageLimitMb: isAdmin ? Infinity : config.storageLimitMb,
+                storageLimitMb: 100,
                 joinedDate: new Date().toISOString().split('T')[0],
-                studioName: isAdmin ? undefined : (isPhotographer ? studioName : undefined)
+                studioName: isPhotographer ? studioName : undefined
             };
-            const created = await api.createUser(newUser);
-            setAllUsers(prev => [...prev, created]);
-            setCurrentUser(created);
-            localStorage.setItem('snapify_user_id', created.id);
-            setView(isAdmin ? 'admin' : 'dashboard');
+            
+            const res = await api.createUser(newUser);
+            finalizeLogin(res.user, res.token);
         } else {
-            const { email, password } = data;
-            const isAdminEmail = email.toLowerCase() === (env.VITE_ADMIN_EMAIL || '').toLowerCase();
-            if (isAdminEmail && env.VITE_ADMIN_PASSWORD) {
-                if (password !== env.VITE_ADMIN_PASSWORD) {
-                    setAuthError(t('authErrorInvalid'));
-                    setIsLoggingIn(false);
-                    return;
-                }
-            }
-            const foundUser = allUsers.find(u => u.email.toLowerCase() === email.toLowerCase());
-            if (foundUser) {
-                let userEvents: Event[];
-                if (foundUser.role === UserRole.ADMIN) userEvents = await api.fetchEvents();
-                else userEvents = await api.fetchEvents(foundUser.id);
-                setEvents(userEvents);
-                setCurrentUser(foundUser);
-                localStorage.setItem('snapify_user_id', foundUser.id);
-                setView(foundUser.role === UserRole.ADMIN ? 'admin' : 'dashboard');
-            } else {
-                setAuthError(t('authErrorInvalid'));
-            }
+            const res = await api.login(email, password);
+            finalizeLogin(res.user, res.token);
         }
-    } catch (e) { setAuthError("Server Error"); }
-    setIsLoggingIn(false);
+    } catch (e) { 
+        console.error(e);
+        setAuthError(t('authErrorInvalid')); 
+    } finally {
+        setIsLoggingIn(false);
+    }
   };
 
   const handleGuestLogin = (name: string) => {
@@ -299,7 +249,6 @@ export default function App() {
     setPendingAction(null);
   };
 
-  // -- Event Logic --
   const handleCreateEvent = async (data: any) => {
     if (!currentUser) return;
     const { title, date, theme, description, adminOptions } = data;
@@ -339,11 +288,15 @@ export default function App() {
       downloads: 0
     };
 
-    const created = await api.createEvent(newEvent);
-    setEvents(prev => [created, ...prev]);
-    setShowCreateModal(false);
-    setCurrentEventId(created.id);
-    setView('event');
+    try {
+        const created = await api.createEvent(newEvent);
+        setEvents(prev => [created, ...prev]);
+        setShowCreateModal(false);
+        setCurrentEventId(created.id);
+        setView('event');
+    } catch (e) {
+        alert("Failed to create event");
+    }
   };
 
   const handleUpdateEvent = async (updatedEvent: Event) => {
@@ -376,24 +329,17 @@ export default function App() {
       if (currentEventId === id) setCurrentEventId(null);
   };
 
-  // -- User Management --
-  const handleUpdateUserTier = async (userId: string, newTier: TierLevel) => {
-      const user = allUsers.find(u => u.id === userId);
-      if (user) {
-          const updated = { ...user, tier: newTier, storageLimitMb: TIER_CONFIG[newTier].storageLimitMb };
-          await api.updateUser(updated);
-          setAllUsers(prev => prev.map(u => u.id === userId ? updated : u));
-          if (currentUser && currentUser.id === userId) setCurrentUser(updated);
-      }
-  };
-
-  const handleUpdateUserRole = async (userId: string, newRole: UserRole) => {
-      const user = allUsers.find(u => u.id === userId);
-      if (user) {
-          const updated = { ...user, role: newRole };
-          await api.updateUser(updated);
-          setAllUsers(prev => prev.map(u => u.id === userId ? updated : u));
-          if (currentUser && currentUser.id === userId) setCurrentUser(updated);
+  const handleUpdateUser = async (updatedUser: User) => {
+      // Recalculate limit based on new tier
+      const limit = TIER_CONFIG[updatedUser.tier].storageLimitMb;
+      const userWithLimit = { ...updatedUser, storageLimitMb: limit };
+      
+      await api.updateUser(userWithLimit);
+      
+      setAllUsers(prev => prev.map(u => u.id === updatedUser.id ? userWithLimit : u));
+      if (currentUser && currentUser.id === updatedUser.id) {
+          setCurrentUser(userWithLimit);
+          localStorage.setItem('snapify_user_obj', JSON.stringify(userWithLimit));
       }
   };
 
@@ -403,6 +349,7 @@ export default function App() {
     await api.updateUser(updatedUser);
     setCurrentUser(updatedUser);
     setAllUsers(prev => prev.map(u => u.id === currentUser.id ? updatedUser : u));
+    localStorage.setItem('snapify_user_obj', JSON.stringify(updatedUser));
   };
 
   const initiateMediaAction = (action: 'upload' | 'camera') => {
@@ -415,8 +362,6 @@ export default function App() {
     }
   };
 
-  // -- Media Handling (Updated for Review Modal) --
-
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || !e.target.files[0] || !activeEvent) return;
     
@@ -425,17 +370,14 @@ export default function App() {
     const url = URL.createObjectURL(file);
 
     setPreviewMedia({ type, src: url, file });
-    // Do NOT upload yet. Wait for modal confirm.
   };
 
   const handleCameraCapture = (imageSrc: string) => {
     if (!activeEvent) return;
     setIsCameraOpen(false);
     setPreviewMedia({ type: 'image', src: imageSrc });
-    // Do NOT upload yet.
   };
 
-  // Actual Upload Logic (Moved from handlers)
   const confirmUpload = async (userCaption: string) => {
     if (!activeEvent || !previewMedia) return;
     
@@ -445,7 +387,6 @@ export default function App() {
         const { type, src, file } = previewMedia;
         const uploader = currentUser ? (currentUser.studioName || currentUser.name) : guestName || "Guest";
         
-        // Size Check (Approximate for base64)
         const fileSizeMb = file ? file.size / (1024 * 1024) : (src.length * (3/4)) / (1024*1024);
         
         if (currentUser) {
@@ -465,10 +406,8 @@ export default function App() {
             }
         }
 
-        // Caption Generation (if user didn't provide one)
         let finalCaption = userCaption;
         if (!finalCaption && type === 'image') {
-             // Only auto-generate if user didn't write anything
              finalCaption = await generateImageCaption(src);
         }
 
@@ -478,7 +417,6 @@ export default function App() {
 
         let uploadFile = file;
         
-        // Apply Watermark / Convert Base64 to File
         if ((shouldWatermark && type === 'image' && currentUser) || (!file && type === 'image')) {
              let source = src;
              if (shouldWatermark && currentUser) {
@@ -510,15 +448,12 @@ export default function App() {
 
         if (uploadFile) {
             await api.uploadMedia(uploadFile, metadata, activeEvent.id);
-        } else if (type === 'video' && !uploadFile) {
-             console.error("Video capture not supported without file");
         }
 
         if (currentUser) {
             updateUserStorage(currentUser.id, fileSizeMb);
         }
 
-        // Cleanup
         setPreviewMedia(null);
         if (fileInputRef.current) fileInputRef.current.value = '';
 
@@ -531,13 +466,16 @@ export default function App() {
   };
 
   const updateUserStorage = async (userId: string, mb: number) => {
-     const user = allUsers.find(u => u.id === userId);
-     if (user) {
+     const user = allUsers.find(u => u.id === userId) || currentUser;
+     if (user && user.id === userId) {
          const newUsed = user.storageUsedMb + mb;
          const updated = { ...user, storageUsedMb: newUsed };
-         await api.updateUser(updated);
-         setAllUsers(prev => prev.map(u => u.id === userId ? updated : u));
-         if (currentUser && currentUser.id === userId) setCurrentUser(updated);
+         try {
+            await api.updateUser(updated);
+            if (currentUser && currentUser.id === userId) setCurrentUser(updated);
+         } catch (e) {
+             console.error("Failed to update storage stats", e);
+         }
      }
   };
 
@@ -546,14 +484,13 @@ export default function App() {
       setEvents(prev => prev.map(e => e.id === eventId ? { ...e, media: e.media.filter(m => m.id !== mediaId) } : e));
   };
 
-  // ... (Download Zip Logic - Same as before) ...
   const downloadEventZip = async (targetEvent: Event) => {
       if (!targetEvent || targetEvent.media.length === 0) return;
       setDownloadingZip(true);
       try {
           const zip = new JSZip();
           const folder = zip.folder(targetEvent.title.replace(/[^a-z0-9]/gi, '_'));
-          const eventHost = allUsers.find(u => u.id === targetEvent.hostId);
+          const eventHost = allUsers.find(u => u.id === targetEvent.hostId); 
           const isFreeTier = !eventHost || eventHost.tier === TierLevel.FREE;
           const fetchFile = async (url: string) => {
                const fetchUrl = url.startsWith('http') || url.startsWith('data:') ? url : `${(env.VITE_API_URL || '')}${url}`;
@@ -598,24 +535,20 @@ export default function App() {
       }
   };
 
-  // Logout handler
   const handleLogout = () => {
       setCurrentUser(null);
       setView('landing');
+      localStorage.removeItem('snapify_token');
       localStorage.removeItem('snapify_user_id');
+      localStorage.removeItem('snapify_user_obj');
   };
 
-  // Back navigation handler
   const handleBack = () => {
       if (view === 'event') {
           setCurrentEventId(null);
-          // If logged in, go to dashboard (or admin), else landing
           setView(currentUser ? (currentUser.role === UserRole.ADMIN ? 'admin' : 'dashboard') : 'landing');
       } else if (view === 'dashboard' || view === 'admin') {
-          // Log out behavior or just home
-          setView('landing');
-          setCurrentUser(null);
-          localStorage.removeItem('snapify_user_id');
+          handleLogout();
       }
   };
 
@@ -650,8 +583,7 @@ export default function App() {
             onDeleteEvent={handleDeleteEvent}
             onDeleteMedia={handleDeleteMedia}
             onUpdateEvent={handleUpdateEvent}
-            onUpdateUserTier={handleUpdateUserTier}
-            onUpdateUserRole={handleUpdateUserRole}
+            onUpdateUser={handleUpdateUser}
             onNewEvent={() => setShowCreateModal(true)}
             onDownloadEvent={downloadEventZip}
             t={t}
@@ -665,11 +597,7 @@ export default function App() {
           currentEventTitle={activeEvent?.title}
           language={language}
           onChangeLanguage={changeLanguage}
-          onLogout={() => {
-            setCurrentUser(null);
-            setView('landing');
-            localStorage.removeItem('snapify_user_id');
-          }}
+          onLogout={handleLogout}
           onHome={() => {
             setCurrentEventId(null);
             if (currentUser) setView(currentUser.role === UserRole.ADMIN ? 'admin' : 'dashboard');
@@ -714,7 +642,6 @@ export default function App() {
 
       <input type="file" ref={fileInputRef} className="hidden" accept="image/*,video/*" onChange={handleFileUpload} />
       
-      {/* Review Modal */}
       {previewMedia && (
         <MediaReviewModal
             type={previewMedia.type}

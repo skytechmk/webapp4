@@ -14,6 +14,8 @@ import { Server } from 'socket.io';
 import { spawn } from 'child_process';
 import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import jwt from 'jsonwebtoken';
+import sharp from 'sharp';
 
 // ES module equivalent of __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -22,6 +24,8 @@ const __dirname = path.dirname(__filename);
 // --- CONFIGURATION ---
 const PORT = process.env.PORT || 3001;
 const ADMIN_EMAIL = process.env.VITE_ADMIN_EMAIL || 'admin@skytech.mk';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123'; 
+const JWT_SECRET = process.env.JWT_SECRET || 'change_this_in_production_secure_random_string';
 
 // Domain Management
 const ALLOWED_ORIGINS = process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : '*';
@@ -48,7 +52,6 @@ const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
     origin: ALLOWED_ORIGINS,
-    methods: ["GET", "POST", "PUT", "DELETE"],
     credentials: true
   }
 });
@@ -60,6 +63,20 @@ app.use(cors({
 }));
 app.use(bodyParser.json({ limit: '50mb' })); 
 app.use(bodyParser.urlencoded({ extended: true }));
+
+// Authentication Middleware
+const authenticateToken = (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1]; 
+  
+    if (token == null) return res.sendStatus(401); 
+  
+    jwt.verify(token, JWT_SECRET, (err, user) => {
+      if (err) return res.sendStatus(403); 
+      req.user = user; 
+      next();
+    });
+};
 
 // Local Temp Storage
 const uploadDir = path.join(__dirname, 'uploads');
@@ -104,6 +121,17 @@ db.serialize(() => {
         watermarkOffsetX REAL,
         watermarkOffsetY REAL
     )`);
+
+    // Ensure Admin Exists for FK Constraints (Self-Repair)
+    const adminId = 'admin-system-id';
+    const adminName = 'System Admin';
+    const joined = new Date().toISOString();
+    
+    db.run(`INSERT OR IGNORE INTO users (id, name, email, role, tier, storageUsedMb, storageLimitMb, joinedDate, studioName) 
+            VALUES (?, ?, ?, 'ADMIN', 'STUDIO', 0, -1, ?, 'System Root')`, 
+            [adminId, adminName, ADMIN_EMAIL, joined], (err) => {
+                if (err) console.error("Failed to seed admin user:", err);
+            });
 
     db.run(`CREATE TABLE IF NOT EXISTS events (
         id TEXT PRIMARY KEY,
@@ -209,20 +237,42 @@ async function uploadToS3(filePath, key, contentType) {
     }
 }
 
-async function generatePresignedUrl(key) {
-    if (!key) return null;
+// IMAGE PROXY ROUTE
+// Solves connectivity issues for mobile users on cellular networks by proxying local S3 streams
+app.get('/api/proxy-media', async (req, res) => {
+    const { key } = req.query;
+    if (!key || typeof key !== 'string') return res.status(400).send("Missing key");
+
     try {
-        return await getSignedUrl(s3Client, new GetObjectCommand({ Bucket: S3_BUCKET, Key: key }), { expiresIn: 3600 });
-    } catch (err) {
-        return null;
+        const command = new GetObjectCommand({
+            Bucket: S3_BUCKET,
+            Key: key
+        });
+        
+        const { Body, ContentType } = await s3Client.send(command);
+        
+        if (ContentType) res.setHeader('Content-Type', ContentType);
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        
+        // @ts-ignore
+        Body.pipe(res);
+    } catch (e) {
+        console.error("Proxy Error:", e);
+        res.status(404).send("Not Found");
     }
+});
+
+// Helper to generate Public Proxy URL
+function getPublicUrl(key) {
+    return `/api/proxy-media?key=${encodeURIComponent(key)}`;
 }
 
-async function attachSignedUrls(mediaList) {
-    return Promise.all(mediaList.map(async (m) => {
-        const signedUrl = await generatePresignedUrl(m.url);
-        const signedPreview = m.previewUrl ? await generatePresignedUrl(m.previewUrl) : null;
-        return { ...m, url: signedUrl || m.url, previewUrl: signedPreview || m.previewUrl, s3Key: m.url };
+async function attachPublicUrls(mediaList) {
+    return mediaList.map(m => ({
+        ...m,
+        url: getPublicUrl(m.url), 
+        previewUrl: m.previewUrl ? getPublicUrl(m.previewUrl) : null,
+        s3Key: m.url 
     }));
 }
 
@@ -237,9 +287,159 @@ io.on('connection', (socket) => {
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok', uptime: process.uptime() }));
 
-// Users
-app.get('/api/users', (req, res) => {
-    // Optional: In a real app, you should check for Admin role here too
+// --- AUTHENTICATION ---
+
+app.post('/api/auth/login', (req, res) => {
+    const { email, password } = req.body;
+
+    if (email.toLowerCase() === ADMIN_EMAIL.toLowerCase() && password === ADMIN_PASSWORD) {
+        const token = jwt.sign({ 
+            id: 'admin-system-id', 
+            role: 'ADMIN', 
+            email: ADMIN_EMAIL 
+        }, JWT_SECRET, { expiresIn: '24h' });
+        
+        const adminUser = {
+            id: 'admin-system-id',
+            name: 'System Admin',
+            email: ADMIN_EMAIL,
+            role: 'ADMIN',
+            tier: 'STUDIO',
+            storageUsedMb: 0,
+            storageLimitMb: Infinity,
+            joinedDate: new Date().toISOString()
+        };
+        
+        // Ensure admin exists in DB (Self-Repair)
+        db.run(`INSERT OR IGNORE INTO users (id, name, email, role, tier, storageUsedMb, storageLimitMb, joinedDate, studioName) 
+            VALUES (?, ?, ?, 'ADMIN', 'STUDIO', 0, -1, ?, 'System Root')`, 
+            ['admin-system-id', 'System Admin', ADMIN_EMAIL, new Date().toISOString()], (err) => {
+                if (err) console.error("Self-repair admin seed failed:", err);
+            });
+
+        return res.json({ token, user: adminUser });
+    }
+
+    db.get("SELECT * FROM users WHERE email = ?", [email], (err, user) => {
+        if (err) return res.status(500).json({ error: err.message });
+        if (!user) return res.status(401).json({ error: "User not found" });
+
+        const token = jwt.sign({ 
+            id: user.id, 
+            role: user.role, 
+            email: user.email 
+        }, JWT_SECRET, { expiresIn: '7d' });
+
+        res.json({ token, user });
+    });
+});
+
+app.post('/api/auth/google', (req, res) => {
+    console.log("Processing Google Login for:", req.body.email);
+    const { email, name } = req.body;
+    
+    if (!email) return res.status(400).json({ error: "Email is required" });
+
+    const normalizedEmail = email.toLowerCase();
+    
+    const safeRole = 'USER';
+    const safeTier = 'FREE';
+    const safeStorageLimit = 100; 
+
+    db.get("SELECT * FROM users WHERE lower(email) = ?", [normalizedEmail], (err, row) => {
+        if (err) {
+            console.error("DB Error in Google Auth:", err);
+            return res.status(500).json({ error: err.message });
+        }
+        
+        if (row) {
+            console.log("User found, logging in:", row.id);
+            const token = jwt.sign({ 
+                id: row.id, 
+                role: row.role, 
+                email: row.email 
+            }, JWT_SECRET, { expiresIn: '7d' });
+            return res.json({ token, user: row });
+        } else {
+            console.log("User not found, creating new:", normalizedEmail);
+            const newId = `user-${Date.now()}`;
+            const joinedDate = new Date().toISOString().split('T')[0];
+            
+            const stmt = db.prepare(`INSERT INTO users (id, name, email, role, tier, storageUsedMb, storageLimitMb, joinedDate, studioName) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+            stmt.run(newId, name, email, safeRole, safeTier, 0, safeStorageLimit, joinedDate, null, function(err) {
+                if (err) return res.status(500).json({ error: err.message });
+                
+                const token = jwt.sign({ 
+                    id: newId, 
+                    role: safeRole, 
+                    email: email 
+                }, JWT_SECRET, { expiresIn: '7d' });
+
+                const newUser = { 
+                    id: newId, name, email, role: safeRole, tier: safeTier, 
+                    storageUsedMb: 0, storageLimitMb: safeStorageLimit, joinedDate 
+                };
+                res.json({ token, user: newUser });
+            });
+            stmt.finalize();
+        }
+    });
+});
+
+// --- ADMIN ACTIONS ---
+
+app.post('/api/admin/reset', authenticateToken, async (req, res) => {
+    if (req.user.role !== 'ADMIN') {
+        return res.status(403).json({ error: "Unauthorized" });
+    }
+
+    const { confirmation } = req.body;
+    if (confirmation !== 'RESET_CONFIRM') {
+        return res.status(400).json({ error: "Invalid confirmation code" });
+    }
+
+    try {
+        console.log(`[System] Admin ${req.user.email} initiated system reset.`);
+
+        db.serialize(() => {
+            db.run("DELETE FROM comments");
+            db.run("DELETE FROM guestbook");
+            db.run("DELETE FROM media");
+            db.run("DELETE FROM events");
+            db.run("DELETE FROM users");
+            
+            // Re-seed Admin immediately to prevent lockout
+            const adminId = 'admin-system-id';
+            const adminName = 'System Admin';
+            const joined = new Date().toISOString();
+            db.run(`INSERT OR IGNORE INTO users (id, name, email, role, tier, storageUsedMb, storageLimitMb, joinedDate, studioName) 
+                    VALUES (?, ?, ?, 'ADMIN', 'STUDIO', 0, -1, ?, 'System Root')`, 
+                    [adminId, adminName, ADMIN_EMAIL, joined]);
+        });
+
+        // Clear Local Uploads Folder
+        fs.readdir(uploadDir, (err, files) => {
+            if (err) console.error(err);
+            else {
+                for (const file of files) {
+                    fs.unlink(path.join(uploadDir, file), (e) => { if(e) console.error(e); });
+                }
+            }
+        });
+
+        res.json({ success: true, message: "System successfully reset." });
+
+    } catch (error) {
+        console.error("[System] Reset failed:", error);
+        res.status(500).json({ error: "Internal Server Error during reset" });
+    }
+});
+
+// --- USERS ---
+
+app.get('/api/users', authenticateToken, (req, res) => {
+    if (req.user.role !== 'ADMIN') return res.sendStatus(403);
+
     db.all("SELECT * FROM users", [], (err, rows) => {
         if (err) return res.status(500).json({ error: err.message });
         res.json(rows);
@@ -248,81 +448,106 @@ app.get('/api/users', (req, res) => {
 
 app.post('/api/users', (req, res) => {
     const user = req.body;
+    const safeRole = 'USER';
+    const safeTier = 'FREE';
+    const safeStorageLimit = 100; 
+
     db.get("SELECT * FROM users WHERE email = ?", [user.email], (err, row) => {
         if (err) return res.status(500).json({ error: err.message });
-        if (row) res.json(row);
-        else {
+        if (row) {
+            return res.json(row); 
+        } else {
             const stmt = db.prepare(`INSERT INTO users (id, name, email, role, tier, storageUsedMb, storageLimitMb, joinedDate, studioName) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-            stmt.run(user.id, user.name, user.email, user.role, user.tier, user.storageUsedMb, user.storageLimitMb, user.joinedDate, user.studioName, (err) => {
+            stmt.run(user.id, user.name, user.email, safeRole, safeTier, 0, safeStorageLimit, user.joinedDate, user.studioName, function(err) {
                 if (err) return res.status(500).json({ error: err.message });
-                res.json(user);
+                
+                const token = jwt.sign({ 
+                    id: user.id, 
+                    role: safeRole, 
+                    email: user.email 
+                }, JWT_SECRET, { expiresIn: '7d' });
+
+                const newUser = { ...user, role: safeRole, tier: safeTier, storageUsedMb: 0, storageLimitMb: safeStorageLimit };
+                res.json({ token, user: newUser });
             });
             stmt.finalize();
         }
     });
 });
 
-app.put('/api/users/:id', (req, res) => {
+app.put('/api/users/:id', authenticateToken, (req, res) => {
     const u = req.body;
-    const stmt = db.prepare(`UPDATE users SET name=?, role=?, tier=?, storageUsedMb=?, storageLimitMb=?, studioName=?, logoUrl=?, watermarkOpacity=?, watermarkSize=?, watermarkPosition=?, watermarkOffsetX=?, watermarkOffsetY=? WHERE id=?`);
-    stmt.run(u.name, u.role, u.tier, u.storageUsedMb, u.storageLimitMb, u.studioName, u.logoUrl, u.watermarkOpacity, u.watermarkSize, u.watermarkPosition, u.watermarkOffsetX, u.watermarkOffsetY, req.params.id, (err) => {
+    const targetId = req.params.id;
+
+    // Only admin or self can update
+    if (req.user.id !== targetId && req.user.role !== 'ADMIN') return res.sendStatus(403);
+
+    db.get("SELECT * FROM users WHERE id = ?", [targetId], (err, existingUser) => {
         if (err) return res.status(500).json({ error: err.message });
-        res.json({ success: true });
+        if (!existingUser) return res.status(404).json({ error: "User not found" });
+
+        // Strict Role Escalation Check
+        if (u.role !== existingUser.role) {
+            if (req.user.id !== 'admin-system-id') {
+                return res.status(403).json({ error: "Only the Root Admin can change user roles." });
+            }
+        }
+
+        const stmt = db.prepare(`UPDATE users SET name=?, role=?, tier=?, storageUsedMb=?, storageLimitMb=?, studioName=?, logoUrl=?, watermarkOpacity=?, watermarkSize=?, watermarkPosition=?, watermarkOffsetX=?, watermarkOffsetY=? WHERE id=?`);
+        stmt.run(u.name, u.role, u.tier, u.storageUsedMb, u.storageLimitMb, u.studioName, u.logoUrl, u.watermarkOpacity, u.watermarkSize, u.watermarkPosition, u.watermarkOffsetX, u.watermarkOffsetY, targetId, (err) => {
+            if (err) return res.status(500).json({ error: err.message });
+            res.json({ success: true });
+        });
+        stmt.finalize();
     });
-    stmt.finalize();
 });
 
-app.delete('/api/users/:id', (req, res) => {
+app.delete('/api/users/:id', authenticateToken, (req, res) => {
+    if (req.user.role !== 'ADMIN') return res.sendStatus(403);
+
     db.run("DELETE FROM users WHERE id=?", req.params.id, (err) => {
         if (err) return res.status(500).json({ error: err.message });
         res.json({ success: true });
     });
 });
 
-// Events - Strict Role-Based Access Control
-app.get('/api/events', (req, res) => {
-    const userId = req.query.userId;
-    if (!userId) return res.status(400).json({ error: 'User ID required' });
+// --- EVENTS ---
 
-    db.get("SELECT role FROM users WHERE id = ?", [userId], (err, user) => {
+app.get('/api/events', authenticateToken, (req, res) => {
+    const callerId = req.user.id;
+    const callerRole = req.user.role;
+
+    let query = "SELECT * FROM events WHERE hostId = ?";
+    let params = [callerId];
+
+    if (callerRole === 'ADMIN') {
+         query = "SELECT * FROM events";
+         params = [];
+    }
+
+    db.all(query, params, async (err, events) => {
         if (err) return res.status(500).json({ error: err.message });
-        if (!user) return res.status(404).json({ error: 'User not found' });
-
-        // ACL Enforcement:
-        // Only users with exact role 'ADMIN' can see all events.
-        // Studio/Pro/Free users can ONLY see events where they are the host.
-        let query = "SELECT * FROM events WHERE hostId = ?";
-        let params = [userId];
-
-        if (user.role === 'ADMIN') {
-             query = "SELECT * FROM events";
-             params = [];
-        }
-
-        db.all(query, params, async (err, events) => {
-            if (err) return res.status(500).json({ error: err.message });
-            try {
-                const detailedEvents = await Promise.all(events.map(async (evt) => {
-                    const media = await new Promise(resolve => db.all("SELECT * FROM media WHERE eventId = ? ORDER BY uploadedAt DESC", [evt.id], (err, rows) => resolve(rows || [])));
-                    const guestbook = await new Promise(resolve => db.all("SELECT * FROM guestbook WHERE eventId = ? ORDER BY createdAt DESC", [evt.id], (err, rows) => resolve(rows || [])));
-                    const comments = await new Promise(resolve => db.all("SELECT * FROM comments WHERE eventId = ? ORDER BY createdAt ASC", [evt.id], (err, rows) => resolve(rows || [])));
-                    
-                    const signedMedia = await attachSignedUrls(media);
-                    const mediaWithComments = signedMedia.map(m => ({
-                        ...m,
-                        comments: comments.filter(c => c.mediaId === m.id)
-                    }));
-
-                    let signedCover = evt.coverImage;
-                    if (evt.coverImage && !evt.coverImage.startsWith('http')) signedCover = await generatePresignedUrl(evt.coverImage);
-
-                    return { ...evt, media: mediaWithComments, guestbook, coverImage: signedCover };
+        try {
+            const detailedEvents = await Promise.all(events.map(async (evt) => {
+                const media = await new Promise(resolve => db.all("SELECT * FROM media WHERE eventId = ? ORDER BY uploadedAt DESC", [evt.id], (err, rows) => resolve(rows || [])));
+                const guestbook = await new Promise(resolve => db.all("SELECT * FROM guestbook WHERE eventId = ? ORDER BY createdAt DESC", [evt.id], (err, rows) => resolve(rows || [])));
+                const comments = await new Promise(resolve => db.all("SELECT * FROM comments WHERE eventId = ? ORDER BY createdAt ASC", [evt.id], (err, rows) => resolve(rows || [])));
+                
+                const signedMedia = await attachPublicUrls(media);
+                const mediaWithComments = signedMedia.map(m => ({
+                    ...m,
+                    comments: comments.filter(c => c.mediaId === m.id)
                 }));
-                res.json(detailedEvents);
-            } catch (e) {
-                res.status(500).json({ error: 'Failed to retrieve event data' });
-            }
-        });
+
+                let signedCover = evt.coverImage;
+                if (evt.coverImage && !evt.coverImage.startsWith('http')) signedCover = getPublicUrl(evt.coverImage);
+
+                return { ...evt, media: mediaWithComments, guestbook, coverImage: signedCover };
+            }));
+            res.json(detailedEvents);
+        } catch (e) {
+            res.status(500).json({ error: 'Failed to retrieve event data' });
+        }
     });
 });
 
@@ -336,14 +561,14 @@ app.get('/api/events/:id', (req, res) => {
             const guestbook = await new Promise(resolve => db.all("SELECT * FROM guestbook WHERE eventId = ? ORDER BY createdAt DESC", [req.params.id], (err, rows) => resolve(rows || [])));
             const comments = await new Promise(resolve => db.all("SELECT * FROM comments WHERE eventId = ? ORDER BY createdAt ASC", [req.params.id], (err, rows) => resolve(rows || [])));
             
-            const signedMedia = await attachSignedUrls(media);
+            const signedMedia = await attachPublicUrls(media);
             const mediaWithComments = signedMedia.map(m => ({
                 ...m,
                 comments: comments.filter(c => c.mediaId === m.id)
             }));
 
             let signedCover = event.coverImage;
-            if (event.coverImage && !event.coverImage.startsWith('http')) signedCover = await generatePresignedUrl(event.coverImage);
+            if (event.coverImage && !event.coverImage.startsWith('http')) signedCover = getPublicUrl(event.coverImage);
 
             res.json({ ...event, media: mediaWithComments, guestbook, coverImage: signedCover });
         } catch (e) {
@@ -361,8 +586,10 @@ app.post('/api/events/:id/validate-pin', (req, res) => {
     });
 });
 
-app.post('/api/events', (req, res) => {
+app.post('/api/events', authenticateToken, (req, res) => {
     const e = req.body;
+    if (e.hostId !== req.user.id && req.user.role !== 'ADMIN') return res.sendStatus(403);
+
     const stmt = db.prepare(`INSERT INTO events (id, title, description, date, hostId, code, expiresAt, pin, views, downloads) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
     stmt.run(e.id, e.title, e.description, e.date, e.hostId, e.code, e.expiresAt, e.pin, 0, 0, (err) => {
         if (err) return res.status(500).json({ error: err.message });
@@ -371,20 +598,38 @@ app.post('/api/events', (req, res) => {
     stmt.finalize();
 });
 
-app.put('/api/events/:id', (req, res) => {
+app.put('/api/events/:id', authenticateToken, (req, res) => {
     const e = req.body;
-    const stmt = db.prepare(`UPDATE events SET title=?, description=?, coverImage=?, coverMediaType=?, expiresAt=?, views=?, downloads=? WHERE id=?`);
-    stmt.run(e.title, e.description, e.coverImage, e.coverMediaType, e.expiresAt, e.views, e.downloads, req.params.id, (err) => {
+    db.get("SELECT hostId FROM events WHERE id = ?", [req.params.id], (err, row) => {
         if (err) return res.status(500).json({ error: err.message });
-        res.json({ success: true });
+        if (!row) return res.status(404).json({ error: "Event not found" });
+
+        if (row.hostId !== req.user.id && req.user.role !== 'ADMIN') {
+            return res.sendStatus(403);
+        }
+
+        const stmt = db.prepare(`UPDATE events SET title=?, description=?, coverImage=?, coverMediaType=?, expiresAt=?, views=?, downloads=? WHERE id=?`);
+        stmt.run(e.title, e.description, e.coverImage, e.coverMediaType, e.expiresAt, e.views, e.downloads, req.params.id, (err) => {
+            if (err) return res.status(500).json({ error: err.message });
+            res.json({ success: true });
+        });
+        stmt.finalize();
     });
-    stmt.finalize();
 });
 
-app.delete('/api/events/:id', (req, res) => {
-    db.run("DELETE FROM events WHERE id=?", req.params.id, (err) => {
+app.delete('/api/events/:id', authenticateToken, (req, res) => {
+    db.get("SELECT hostId FROM events WHERE id = ?", [req.params.id], (err, row) => {
         if (err) return res.status(500).json({ error: err.message });
-        res.json({ success: true });
+        if (!row) return res.status(404).json({ error: "Event not found" });
+
+        if (row.hostId !== req.user.id && req.user.role !== 'ADMIN') {
+            return res.sendStatus(403);
+        }
+
+        db.run("DELETE FROM events WHERE id=?", req.params.id, (err) => {
+            if (err) return res.status(500).json({ error: err.message });
+            res.json({ success: true });
+        });
     });
 });
 
@@ -420,16 +665,50 @@ app.post('/api/media', upload.single('file'), async (req, res) => {
 
     if (!isVideo) {
         try {
-            await uploadToS3(req.file.path, s3Key, req.file.mimetype);
-            stmt.run(body.id, body.eventId, body.type, s3Key, '', 0, body.caption, body.uploadedAt, body.uploaderName, body.isWatermarked === 'true' ? 1 : 0, body.watermarkText, 0, async (err) => {
+            // GENERATE THUMBNAIL
+            const previewFilename = `thumb_${path.parse(req.file.filename).name}.jpg`;
+            const previewPath = path.join(uploadDir, previewFilename);
+            const previewKey = `events/${body.eventId}/thumb_${body.id}.jpg`;
+
+            await sharp(req.file.path)
+                .resize(400, 400, { fit: 'inside', withoutEnlargement: true })
+                .jpeg({ quality: 80 })
+                .toFile(previewPath);
+
+            await Promise.all([
+                uploadToS3(req.file.path, s3Key, req.file.mimetype),
+                uploadToS3(previewPath, previewKey, 'image/jpeg')
+            ]);
+
+            fs.unlink(previewPath, () => {});
+
+            stmt.run(body.id, body.eventId, body.type, s3Key, previewKey, 0, body.caption, body.uploadedAt, body.uploaderName, body.isWatermarked === 'true' ? 1 : 0, body.watermarkText, 0, async (err) => {
                 if (err) return res.status(500).json({ error: err.message });
-                const signedUrl = await generatePresignedUrl(s3Key);
-                const mediaItem = { id: body.id, eventId: body.eventId, url: signedUrl, type: body.type, caption: body.caption, isProcessing: false, uploadedAt: body.uploadedAt, uploaderName: body.uploaderName, likes: 0, comments: [] };
+                
+                const publicUrl = getPublicUrl(s3Key);
+                const publicPreview = getPublicUrl(previewKey);
+                
+                const mediaItem = { 
+                    id: body.id, 
+                    eventId: body.eventId, 
+                    url: publicUrl, 
+                    previewUrl: publicPreview, 
+                    type: body.type, 
+                    caption: body.caption, 
+                    isProcessing: false, 
+                    uploadedAt: body.uploadedAt, 
+                    uploaderName: body.uploaderName, 
+                    likes: 0, 
+                    comments: [] 
+                };
                 io.to(body.eventId).emit('media_uploaded', mediaItem);
                 res.json(mediaItem);
             });
             stmt.finalize();
-        } catch (e) { res.status(500).json({ error: e.message }); }
+        } catch (e) { 
+            console.error("Upload/Sharp Error", e);
+            res.status(500).json({ error: e.message }); 
+        }
     } else {
         stmt.run(body.id, body.eventId, body.type, s3Key, '', 1, body.caption, body.uploadedAt, body.uploaderName, body.isWatermarked === 'true' ? 1 : 0, body.watermarkText, 0, (err) => {
             if (err) return res.status(500).json({ error: err.message });
@@ -451,9 +730,9 @@ app.post('/api/media', upload.single('file'), async (req, res) => {
                                 await Promise.all([uploadToS3(inputPath, s3Key, req.file.mimetype), uploadToS3(outputPath, previewKey, 'video/mp4')]);
                                 db.run("UPDATE media SET isProcessing = 0, previewUrl = ? WHERE id = ?", [previewKey, body.id], async (err) => {
                                     if (!err) {
-                                        const signedPreview = await generatePresignedUrl(previewKey);
-                                        const signedOriginal = await generatePresignedUrl(s3Key);
-                                        io.to(body.eventId).emit('media_processed', { id: body.id, previewUrl: signedPreview, url: signedOriginal });
+                                        const publicPreview = getPublicUrl(previewKey);
+                                        const publicOriginal = getPublicUrl(s3Key);
+                                        io.to(body.eventId).emit('media_processed', { id: body.id, previewUrl: publicPreview, url: publicOriginal });
                                     }
                                 });
                                 resolve();
@@ -480,14 +759,27 @@ app.put('/api/media/:id/like', (req, res) => {
     });
 });
 
-app.delete('/api/media/:id', (req, res) => {
-    db.get("SELECT url, previewUrl FROM media WHERE id = ?", req.params.id, async (err, row) => {
-        if (row) {
-            try {
-                if (row.url) await s3Client.send(new DeleteObjectCommand({ Bucket: S3_BUCKET, Key: row.url }));
-                if (row.previewUrl) await s3Client.send(new DeleteObjectCommand({ Bucket: S3_BUCKET, Key: row.previewUrl }));
-            } catch (e) { console.error("S3 Delete Error:", e.message); }
+app.delete('/api/media/:id', authenticateToken, (req, res) => {
+    const query = `
+        SELECT media.url, media.previewUrl, events.hostId 
+        FROM media 
+        JOIN events ON media.eventId = events.id 
+        WHERE media.id = ?
+    `;
+    
+    db.get(query, [req.params.id], async (err, row) => {
+        if (err) return res.status(500).json({ error: err.message });
+        if (!row) return res.status(404).json({ error: "Media not found" });
+
+        if (row.hostId !== req.user.id && req.user.role !== 'ADMIN') {
+            return res.sendStatus(403);
         }
+
+        try {
+            if (row.url) await s3Client.send(new DeleteObjectCommand({ Bucket: S3_BUCKET, Key: row.url }));
+            if (row.previewUrl) await s3Client.send(new DeleteObjectCommand({ Bucket: S3_BUCKET, Key: row.previewUrl }));
+        } catch (e) { console.error("S3 Delete Error:", e.message); }
+
         db.run("DELETE FROM media WHERE id = ?", req.params.id, (err) => {
             if (err) return res.status(500).json({ error: err.message });
             res.json({ success: true });
@@ -495,9 +787,33 @@ app.delete('/api/media/:id', (req, res) => {
     });
 });
 
-app.post('/api/media/bulk-delete', (req, res) => {
+app.post('/api/media/bulk-delete', authenticateToken, (req, res) => {
     const { mediaIds } = req.body;
-    if (!mediaIds || !Array.isArray(mediaIds)) return res.status(400).json({ error: 'Invalid media IDs' });
+    if (!mediaIds || !Array.isArray(mediaIds) || mediaIds.length === 0) return res.status(400).json({ error: 'Invalid media IDs' });
+
+    if (req.user.role === 'ADMIN') {
+        processBulkDelete(mediaIds, res);
+    } else {
+        const placeholders = mediaIds.map(() => '?').join(',');
+        const checkQuery = `
+            SELECT DISTINCT events.hostId 
+            FROM media 
+            JOIN events ON media.eventId = events.id 
+            WHERE media.id IN (${placeholders})
+        `;
+        
+        db.all(checkQuery, mediaIds, (err, rows) => {
+            if (err) return res.status(500).json({ error: err.message });
+            
+            const isAuthorized = rows.every(row => row.hostId === req.user.id);
+            if (!isAuthorized) return res.sendStatus(403);
+
+            processBulkDelete(mediaIds, res);
+        });
+    }
+});
+
+function processBulkDelete(mediaIds, res) {
     const placeholders = mediaIds.map(() => '?').join(',');
     db.all(`SELECT id, url, previewUrl FROM media WHERE id IN (${placeholders})`, mediaIds, async (err, rows) => {
         if (err) return res.status(500).json({ error: err.message });
@@ -512,7 +828,7 @@ app.post('/api/media/bulk-delete', (req, res) => {
             res.json({ success: true, deletedCount: mediaIds.length });
         });
     });
-});
+}
 
 server.listen(PORT, () => {
     console.log(`Server running on http://0.0.0.0:${PORT}`);

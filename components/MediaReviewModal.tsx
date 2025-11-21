@@ -46,7 +46,7 @@ export const MediaReviewModal: React.FC<MediaReviewModalProps> = ({
             autoPlay 
             controls 
             loop 
-            playsInline 
+            playsInline // Critical for iOS
             className="max-w-full max-h-full object-contain" 
           />
         ) : (

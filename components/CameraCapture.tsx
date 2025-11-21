@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
-import { X, RotateCcw, Images, Loader2, Zap, ZapOff } from 'lucide-react';
+import { X, RotateCcw, Loader2, Zap, ZapOff, Grid } from 'lucide-react'; // Added Grid icon
 import { TranslateFn } from '../types';
 import { createPhotoStrip } from '../utils/imageProcessing';
 
@@ -9,14 +9,7 @@ interface CameraCaptureProps {
   t: TranslateFn;
 }
 
-const FILTERS = [
-  { id: 'none', name: 'Normal', css: 'none' },
-  { id: 'grayscale', name: 'B&W', css: 'grayscale(1)' },
-  { id: 'sepia', name: 'Vintage', css: 'sepia(0.8) contrast(1.2)' },
-  { id: 'warm', name: 'Warm', css: 'sepia(0.3) saturate(1.4)' },
-  { id: 'cool', name: 'Cool', css: 'saturate(0.5) hue-rotate(180deg)' },
-  { id: 'invert', name: 'Negative', css: 'invert(1)' },
-];
+// REMOVED FILTERS CONSTANT
 
 export const CameraCapture: React.FC<CameraCaptureProps> = ({ onCapture, onClose, t }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -26,23 +19,23 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onCapture, onClose
   
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [error, setError] = useState<string>('');
-  const [flash, setFlash] = useState(false);
-  const [usingFrontCamera, setUsingFrontCamera] = useState(true); // Default to front for selfies
+  const [flash, setFlash] = useState(false); // For visual flash effect on capture
+  const [torch, setTorch] = useState(false); // For "Flash" mode (screen brightness)
+  const [showGrid, setShowGrid] = useState(false); // NEW: Grid overlay state
+  const [usingFrontCamera, setUsingFrontCamera] = useState(true); 
   
   // Modes: 'photo', 'video', 'booth'
   const [mode, setMode] = useState<'photo' | 'video' | 'booth'>('photo');
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
-  const [selectedFilter, setSelectedFilter] = useState(FILTERS[0]);
   
   // Photobooth State
   const [countdown, setCountdown] = useState<number | null>(null);
   const [processingStrip, setProcessingStrip] = useState(false);
 
   const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
-
-  // Cleanup helper for Object URLs
   const objectUrlsRef = useRef<string[]>([]);
+
   useEffect(() => {
       return () => {
           objectUrlsRef.current.forEach(url => URL.revokeObjectURL(url));
@@ -77,7 +70,7 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onCapture, onClose
       console.error('Camera error:', err);
       setError(t('cameraError'));
     }
-  }, [t, mode]); // Removed stream dependency to prevent loops, handle cleanup inside
+  }, [t, mode]);
 
   const switchCamera = () => {
     startCamera(!usingFrontCamera);
@@ -93,26 +86,20 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onCapture, onClose
         clearInterval(recordingTimerRef.current);
       }
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Intentionally empty dependency array for init
+  }, []); 
 
-  // Helper to capture single frame with filter
   const captureFrame = (): string | null => {
     if (videoRef.current && canvasRef.current) {
       const video = videoRef.current;
       const canvas = canvasRef.current;
       
-      // Match canvas size to video stream resolution
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
       
       const ctx = canvas.getContext('2d');
       if (ctx) {
-        // Apply Filter
-        if (selectedFilter.id !== 'none') {
-            ctx.filter = selectedFilter.css;
-        }
-        
+        // REMOVED FILTER APPLICATION LOGIC
+
         // Mirror if front camera
         if (usingFrontCamera) {
             ctx.translate(canvas.width, 0);
@@ -122,7 +109,6 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onCapture, onClose
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
         
         // Reset context
-        ctx.filter = 'none';
         ctx.setTransform(1, 0, 0, 1, 0, 0);
 
         return canvas.toDataURL('image/jpeg', 0.90);
@@ -176,7 +162,6 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onCapture, onClose
     recordedChunksRef.current = [];
     
     try {
-      // Prefer vp9/opus, fallback to default if not supported
       const options = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus') 
         ? { mimeType: 'video/webm;codecs=vp9,opus' } 
         : undefined;
@@ -191,7 +176,7 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onCapture, onClose
       mediaRecorder.onstop = () => {
         const blob = new Blob(recordedChunksRef.current, { type: 'video/webm' });
         const url = URL.createObjectURL(blob);
-        objectUrlsRef.current.push(url); // Track for cleanup
+        objectUrlsRef.current.push(url); 
         onCapture(url);
       };
       
@@ -232,16 +217,23 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onCapture, onClose
 
   return (
     <div className="fixed inset-0 z-50 bg-black flex flex-col">
+      {/* Flash Overlay (Simulated Torch) */}
+      {torch && <div className="absolute inset-0 bg-white/10 pointer-events-none z-10 mix-blend-overlay" />}
+
       {/* Top Bar */}
       <div className="absolute top-0 left-0 right-0 p-4 pt-safe-top flex justify-between items-center z-20 bg-gradient-to-b from-black/60 to-transparent">
-         <div className="text-white font-bold flex items-center gap-2">
+         <div className="text-white font-bold flex items-center gap-4">
+            {/* Flash Toggle */}
+            <button onClick={() => setTorch(!torch)} className={`p-2 rounded-full ${torch ? 'bg-yellow-400 text-black' : 'bg-white/20 text-white'}`}>
+                {torch ? <Zap size={20} fill="currentColor" /> : <ZapOff size={20} />}
+            </button>
+            {/* Grid Toggle */}
+             <button onClick={() => setShowGrid(!showGrid)} className={`p-2 rounded-full ${showGrid ? 'bg-white text-black' : 'bg-white/20 text-white'}`}>
+                <Grid size={20} />
+            </button>
+
             {isRecording && mode === 'video' && (
                 <span className="bg-red-500 px-2 py-0.5 rounded text-xs animate-pulse">REC {recordingTime}s</span>
-            )}
-            {mode === 'booth' && (
-                <span className="bg-indigo-500 px-2 py-0.5 rounded text-xs flex items-center gap-1 shadow-lg">
-                    <Images size={12} /> PHOTOBOOTH
-                </span>
             )}
          </div>
          <button onClick={onClose} className="p-2 bg-white/20 backdrop-blur-sm rounded-full text-white hover:bg-white/30 transition-colors">
@@ -249,7 +241,7 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onCapture, onClose
          </button>
       </div>
 
-      {/* Flash */}
+      {/* Capture Flash Effect */}
       <div className={`absolute inset-0 bg-white pointer-events-none transition-opacity duration-150 z-30 ${flash ? 'opacity-100' : 'opacity-0'}`} />
       
       {/* Countdown */}
@@ -259,7 +251,17 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onCapture, onClose
           </div>
       )}
       
-      {/* Processing */}
+      {/* Grid Lines */}
+      {showGrid && (
+          <div className="absolute inset-0 z-10 pointer-events-none">
+              <div className="absolute left-1/3 top-0 bottom-0 w-px bg-white/30" />
+              <div className="absolute right-1/3 top-0 bottom-0 w-px bg-white/30" />
+              <div className="absolute top-1/3 left-0 right-0 h-px bg-white/30" />
+              <div className="absolute bottom-1/3 left-0 right-0 h-px bg-white/30" />
+          </div>
+      )}
+
+      {/* Processing Overlay */}
       {processingStrip && (
           <div className="absolute inset-0 flex flex-col items-center justify-center z-50 bg-black/80 backdrop-blur-sm">
               <Loader2 className="text-indigo-500 w-16 h-16 animate-spin mb-4" />
@@ -267,7 +269,7 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onCapture, onClose
           </div>
       )}
 
-      {/* Video Viewport - using object-cover to fill screen without black bars */}
+      {/* Video Viewport */}
       <div className="absolute inset-0 z-0 bg-black">
         {error ? (
           <div className="flex h-full items-center justify-center text-white p-6 text-center">
@@ -285,46 +287,24 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onCapture, onClose
             playsInline
             muted
             className={`w-full h-full object-cover transition-transform duration-300 ${usingFrontCamera ? 'scale-x-[-1]' : ''}`}
-            style={{ filter: mode !== 'video' ? selectedFilter.css : 'none' }}
+            // Removed style={{ filter... }} since we want clean media
           />
         )}
         <canvas ref={canvasRef} className="hidden" />
       </div>
 
-      {/* Filter Strip */}
-      {mode !== 'video' && !error && (
-          <div className="absolute bottom-36 left-0 right-0 h-20 z-30 overflow-x-auto no-scrollbar">
-              <div className="flex items-center gap-4 px-6 h-full">
-                  {FILTERS.map(f => (
-                      <button
-                        key={f.id}
-                        onClick={() => setSelectedFilter(f)}
-                        className={`flex-shrink-0 w-14 h-14 rounded-full overflow-hidden border-2 transition-all relative group shadow-lg ${selectedFilter.id === f.id ? 'border-indigo-500 scale-110 ring-2 ring-indigo-500/50' : 'border-white/60'}`}
-                      >
-                          <div className="w-full h-full bg-gray-400" style={{ filter: f.css }}>
-                              <div className="w-full h-full bg-gradient-to-br from-white/20 to-black/20" />
-                          </div>
-                          <span className="absolute bottom-0 left-0 right-0 text-[9px] bg-black/60 text-white text-center py-0.5 backdrop-blur-sm">
-                              {f.name}
-                          </span>
-                      </button>
-                  ))}
-              </div>
-          </div>
-      )}
-
       {/* Bottom Controls */}
       <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent pb-safe-bottom pt-12 z-20">
         
         {/* Mode Switcher */}
-        <div className="flex justify-center gap-8 mb-6 text-sm font-bold uppercase tracking-widest text-shadow-sm">
+        <div className="flex justify-center gap-8 mb-8 text-sm font-bold uppercase tracking-widest text-shadow-sm">
             <button onClick={() => setMode('photo')} className={`transition-all ${mode === 'photo' ? 'text-yellow-400 scale-110' : 'text-white/60 hover:text-white'}`}>Photo</button>
             <button onClick={() => setMode('video')} className={`transition-all ${mode === 'video' ? 'text-yellow-400 scale-110' : 'text-white/60 hover:text-white'}`}>Video</button>
             <button onClick={() => setMode('booth')} className={`transition-all ${mode === 'booth' ? 'text-indigo-400 scale-110' : 'text-white/60 hover:text-white'}`}>Booth</button>
         </div>
 
         <div className="flex items-center justify-around px-10 pb-8">
-            {/* Rotate */}
+            {/* Rotate Camera */}
             <button 
                 onClick={switchCamera}
                 className="p-3 rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors backdrop-blur-md"
@@ -332,7 +312,7 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onCapture, onClose
                 <RotateCcw size={24} />
             </button>
             
-            {/* Shutter */}
+            {/* Shutter Button */}
             <button 
                 onClick={handleMainButton}
                 disabled={isRecording && mode === 'booth'}
@@ -349,10 +329,8 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onCapture, onClose
                 }`} />
             </button>
 
-            {/* Placeholder / Flash Toggle (Optional future use) */}
-            <div className="w-12 flex justify-center">
-               {/* Future flash toggle could go here */}
-            </div>
+            {/* Spacer for balance */}
+            <div className="w-12" />
         </div>
       </div>
     </div>

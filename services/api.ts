@@ -3,35 +3,90 @@ import { User, Event, MediaItem, GuestbookEntry, Comment } from '../types';
 // @ts-ignore
 const API_URL = import.meta.env.VITE_API_URL || ''; 
 
+const getAuthHeaders = () => {
+    const token = localStorage.getItem('snapify_token');
+    return token ? { 'Authorization': `Bearer ${token}` } : {};
+};
+
 export const api = {
     // Users
     fetchUsers: async (): Promise<User[]> => {
-        const res = await fetch(`${API_URL}/api/users`);
+        const res = await fetch(`${API_URL}/api/users`, {
+            headers: { ...getAuthHeaders() }
+        });
         return res.json();
     },
-    createUser: async (user: User): Promise<User> => {
+    
+    // Login & Auth
+    login: async (email: string, password?: string): Promise<{ token: string, user: User }> => {
+        const res = await fetch(`${API_URL}/api/auth/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password })
+        });
+        if (!res.ok) throw new Error("Invalid credentials");
+        return res.json();
+    },
+
+    googleLogin: async (email: string, name: string): Promise<{ token: string, user: User }> => {
+        const res = await fetch(`${API_URL}/api/auth/google`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, name })
+        });
+        if (!res.ok) throw new Error("Google login failed");
+        return res.json();
+    },
+
+    // Admin System Reset
+    resetSystem: async (): Promise<void> => {
+        const res = await fetch(`${API_URL}/api/admin/reset`, {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                ...getAuthHeaders() 
+            },
+            body: JSON.stringify({ confirmation: 'RESET_CONFIRM' })
+        });
+        
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.error || "Failed to reset system");
+        }
+    },
+
+    createUser: async (user: User): Promise<{ token: string, user: User }> => {
         const res = await fetch(`${API_URL}/api/users`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(user)
         });
+        if (!res.ok) throw new Error("Registration failed");
         return res.json();
     },
+
     updateUser: async (user: User): Promise<void> => {
         await fetch(`${API_URL}/api/users/${user.id}`, {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+                'Content-Type': 'application/json',
+                ...getAuthHeaders()
+            },
             body: JSON.stringify(user)
         });
     },
     deleteUser: async (id: string): Promise<void> => {
-        await fetch(`${API_URL}/api/users/${id}`, { method: 'DELETE' });
+        await fetch(`${API_URL}/api/users/${id}`, { 
+            method: 'DELETE',
+            headers: { ...getAuthHeaders() }
+        });
     },
 
     // Events
-    fetchEvents: async (userId?: string): Promise<Event[]> => {
-        const url = userId ? `${API_URL}/api/events?userId=${encodeURIComponent(userId)}` : `${API_URL}/api/events`;
-        const res = await fetch(url);
+    fetchEvents: async (): Promise<Event[]> => {
+        const res = await fetch(`${API_URL}/api/events`, {
+            headers: { ...getAuthHeaders() }
+        });
         if (!res.ok) return [];
         const data = await res.json();
         return data.map((e: any) => ({
@@ -66,7 +121,10 @@ export const api = {
     createEvent: async (event: Event): Promise<Event> => {
         const res = await fetch(`${API_URL}/api/events`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+                'Content-Type': 'application/json',
+                ...getAuthHeaders()
+            },
             body: JSON.stringify(event)
         });
         return res.json();
@@ -74,12 +132,18 @@ export const api = {
     updateEvent: async (event: Event): Promise<void> => {
         await fetch(`${API_URL}/api/events/${event.id}`, {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+                'Content-Type': 'application/json',
+                ...getAuthHeaders()
+            },
             body: JSON.stringify(event)
         });
     },
     deleteEvent: async (id: string): Promise<void> => {
-        await fetch(`${API_URL}/api/events/${id}`, { method: 'DELETE' });
+        await fetch(`${API_URL}/api/events/${id}`, { 
+            method: 'DELETE',
+            headers: { ...getAuthHeaders() }
+        });
     },
 
     // Guestbook & Comments
@@ -129,12 +193,18 @@ export const api = {
         await fetch(`${API_URL}/api/media/${id}/like`, { method: 'PUT' });
     },
     deleteMedia: async (id: string): Promise<void> => {
-        await fetch(`${API_URL}/api/media/${id}`, { method: 'DELETE' });
+        await fetch(`${API_URL}/api/media/${id}`, { 
+            method: 'DELETE',
+            headers: { ...getAuthHeaders() }
+        });
     },
     bulkDeleteMedia: async (mediaIds: string[]): Promise<{ success: boolean; deletedCount: number }> => {
         const res = await fetch(`${API_URL}/api/media/bulk-delete`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+                'Content-Type': 'application/json',
+                ...getAuthHeaders() 
+            },
             body: JSON.stringify({ mediaIds })
         });
         const data = await res.json();
