@@ -18,6 +18,10 @@ import { GuestLoginModal } from './components/GuestLoginModal';
 import { StudioSettingsModal } from './components/StudioSettingsModal';
 import { MediaReviewModal } from './components/MediaReviewModal';
 import { LiveSlideshow } from './components/LiveSlideshow';
+import { PWAInstallPrompt } from './components/PWAInstallPrompt';
+import { OfflineBanner } from './components/OfflineBanner';
+import { ShareTargetHandler } from './components/ShareTargetHandler';
+import { ReloadPrompt } from './components/ReloadPrompt';
 import { applyWatermark } from './utils/imageProcessing';
 import { api } from './services/api';
 import { getStoredUserId, isKnownDevice, clearDeviceFingerprint } from './utils/deviceFingerprint';
@@ -197,29 +201,71 @@ export default function App() {
       }
   };
 
-  const finalizeLogin = (user: User, token: string) => {
+  const finalizeLogin = async (user: User, token: string) => {
       setCurrentUser(user);
       localStorage.setItem('snapify_token', token);
       localStorage.setItem('snapify_user_id', user.id);
       localStorage.setItem('snapify_user_obj', JSON.stringify(user));
       
-      api.fetchEvents().then(setEvents);
-      
-      // Check URL for event parameter first (highest priority)
-      const params = new URLSearchParams(window.location.search);
-      const urlEventId = params.get('event');
-      
-      if (urlEventId) {
-          // If there's an event in URL, redirect to that event
-          setCurrentEventId(urlEventId);
-          setView('event');
-      } else if (currentEventId) {
-          // If we have a current event in state, stay on that event
-          setView('event');
-      } else if (user.role === UserRole.ADMIN) {
-          api.fetchUsers().then(setAllUsers);
-          setView('admin');
-      } else {
+      // Refresh events with the new auth token to ensure we get user-specific data
+      try {
+          const eventsData = await api.fetchEvents();
+          setEvents(eventsData);
+
+          // Check URL for event parameter first (highest priority)
+          const params = new URLSearchParams(window.location.search);
+          const urlEventId = params.get('event');
+          
+          // Determine target view
+          if (urlEventId) {
+              // If there's an event in URL, ensure it's loaded and redirect
+              // We check if the event is already in the fetched list
+              const targetEvent = eventsData.find(e => e.id === urlEventId);
+              
+              if (targetEvent) {
+                 setCurrentEventId(urlEventId);
+                 setView('event');
+              } else {
+                 // If not in list (maybe public event not owned by user), try fetching it specifically
+                 try {
+                     const sharedEvent = await api.fetchEventById(urlEventId);
+                     setEvents(prev => [...prev, sharedEvent]);
+                     setCurrentEventId(urlEventId);
+                     setView('event');
+                 } catch(err) {
+                     console.error("Could not load URL event after login", err);
+                     // Fallback to dashboard
+                     setView('dashboard');
+                 }
+              }
+          } else if (currentEventId) {
+              // If we have a current event in state (preserved from before login), stay on that event
+              // Re-verify it exists in the new authenticated context
+               const targetEvent = eventsData.find(e => e.id === currentEventId);
+               if(targetEvent) {
+                   setView('event');
+               } else {
+                   // Try fetching specifically again
+                   try {
+                       const sharedEvent = await api.fetchEventById(currentEventId);
+                       setEvents(prev => {
+                           if (prev.some(e => e.id === currentEventId)) return prev;
+                           return [...prev, sharedEvent];
+                       });
+                       setView('event');
+                   } catch {
+                       setView('dashboard');
+                   }
+               }
+          } else if (user.role === UserRole.ADMIN) {
+              api.fetchUsers().then(setAllUsers);
+              setView('admin');
+          } else {
+              setView('dashboard');
+          }
+      } catch (error) {
+          console.error("Error during finalizeLogin", error);
+          // Fallback
           setView('dashboard');
       }
   };
@@ -268,10 +314,10 @@ export default function App() {
             };
             
             const res = await api.createUser(newUser);
-            finalizeLogin(res.user, res.token);
+            await finalizeLogin(res.user, res.token);
         } else {
             const res = await api.login(email, password);
-            finalizeLogin(res.user, res.token);
+            await finalizeLogin(res.user, res.token);
         }
     } catch (e) { 
         console.error(e);
@@ -285,16 +331,23 @@ export default function App() {
     setGuestName(name);
     localStorage.setItem('snapify_guest_name', name);
     setShowGuestLogin(false);
+    
+    // After guest login, ensure we stay on the event view if we have an ID
+    if (currentEventId) {
+        setView('event');
+    }
+
     if (pendingAction === 'camera') setIsCameraOpen(true);
     else if (pendingAction === 'upload') fileInputRef.current?.click();
     setPendingAction(null);
   };
 
-  // Redirect guest to full login flow while preserving event context
-  const handleGuestRegister = () => {
+  // Redirect to Landing Page for login, but PRESERVE currentEventId in state
+  // This ensures finalizeLogin redirects back to the event after auth
+  const handleSignInRequest = () => {
       setShowGuestLogin(false);
+      // We keep currentEventId set so finalizeLogin knows where to return
       setView('landing');
-      // currentEventId remains in state, so finalizeLogin will redirect back
   };
 
   const handleCreateEvent = async (data: any) => {
@@ -595,104 +648,131 @@ export default function App() {
       }
   };
 
-  if (view === 'landing') {
-    return (
-      <>
-        <LandingPage 
-          onGoogleLogin={() => { if (window.google) window.google.accounts.id.prompt(); }}
-          onEmailAuth={handleEmailAuth}
-          onContactSales={() => setShowContactModal(true)}
-          isLoggingIn={isLoggingIn}
-          authError={authError}
-          language={language}
-          onChangeLanguage={changeLanguage}
-          t={t}
-        />
-        {showContactModal && <ContactModal onClose={() => setShowContactModal(false)} t={t} />}
-      </>
-    );
-  }
+  const handleIncomingShare = (text: string) => {
+      if (currentEventId) {
+          alert(`Shared to SnapifY: ${text}`);
+      } else {
+          localStorage.setItem('snapify_shared_pending', text);
+      }
+  };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col">
+    // APP SHELL LAYOUT
+    // Fixed full height container, safe area padding handled on wrapper
+    <div className="h-full w-full flex flex-col bg-slate-50 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
+      <OfflineBanner t={t} />
+      <ShareTargetHandler onShareReceive={handleIncomingShare} />
+      <ReloadPrompt />
       
-      {view === 'admin' && currentUser?.role === UserRole.ADMIN ? (
-         <AdminDashboard 
-            users={allUsers}
-            events={events}
-            onClose={() => setView('dashboard')}
-            onLogout={handleLogout}
-            onDeleteUser={async (id) => { await api.deleteUser(id); setAllUsers(prev => prev.filter(u => u.id !== id)); }}
-            onDeleteEvent={handleDeleteEvent}
-            onDeleteMedia={handleDeleteMedia}
-            onUpdateEvent={handleUpdateEvent}
-            onUpdateUser={handleUpdateUser}
-            onNewEvent={() => setShowCreateModal(true)}
-            onDownloadEvent={downloadEventZip}
-            t={t}
-         />
-      ) : (
-        <>
-        <Navigation 
-          currentUser={currentUser}
-          guestName={guestName}
-          view={view}
-          currentEventTitle={activeEvent?.title}
-          language={language}
-          onChangeLanguage={changeLanguage}
-          onLogout={handleLogout}
-          onHome={() => {
-            setCurrentEventId(null);
-            if (currentUser) setView(currentUser.role === UserRole.ADMIN ? 'admin' : 'dashboard');
-            else setView('landing');
-          }}
-          onBack={handleBack}
-          onToAdmin={() => setView('admin')}
-          onOpenSettings={() => setShowStudioSettings(true)}
-          t={t}
-        />
+      {/* CONTENT AREA (Scrollable) */}
+      {/* The entire app scrolls inside this div, keeping the browser chrome stable */}
+      <div className="flex-1 overflow-y-auto overflow-x-hidden scroll-smooth w-full h-full relative no-scrollbar">
+          
+          {view === 'landing' ? (
+            <>
+              <LandingPage 
+                onGoogleLogin={() => { if (window.google) window.google.accounts.id.prompt(); }}
+                onEmailAuth={handleEmailAuth}
+                onContactSales={() => setShowContactModal(true)}
+                isLoggingIn={isLoggingIn}
+                authError={authError}
+                language={language}
+                onChangeLanguage={changeLanguage}
+                t={t}
+              />
+              <PWAInstallPrompt t={t} />
+              {showContactModal && <ContactModal onClose={() => setShowContactModal(false)} t={t} />}
+            </>
+          ) : (
+             // AUTHENTICATED / EVENT VIEWS
+             <div className="flex flex-col min-h-full">
+                 {/* Navigation is sticky at the top of the scroll container */}
+                 <div className="sticky top-0 z-[50] w-full bg-slate-50/95 backdrop-blur-md">
+                     <Navigation 
+                        currentUser={currentUser}
+                        guestName={guestName}
+                        view={view}
+                        currentEventTitle={activeEvent?.title}
+                        language={language}
+                        onChangeLanguage={changeLanguage}
+                        onLogout={handleLogout}
+                        onSignIn={handleSignInRequest} 
+                        onHome={() => {
+                          setCurrentEventId(null);
+                          if (currentUser) setView(currentUser.role === UserRole.ADMIN ? 'admin' : 'dashboard');
+                          else setView('landing');
+                        }}
+                        onBack={handleBack}
+                        onToAdmin={() => setView('admin')}
+                        onOpenSettings={() => setShowStudioSettings(true)}
+                        t={t}
+                     />
+                 </div>
 
-        {view === 'dashboard' && currentUser && (
-            <UserDashboard 
-              events={events}
-              currentUser={currentUser}
-              onNewEvent={() => setShowCreateModal(true)}
-              onSelectEvent={(id) => { setCurrentEventId(id); setView('event'); }}
-              onRequestUpgrade={() => setShowContactModal(true)}
-              t={t}
-            />
-        )}
+                 <div className="flex-1 pb-32"> {/* Add padding bottom for footer */}
+                    {view === 'admin' && currentUser?.role === UserRole.ADMIN && (
+                         <AdminDashboard 
+                            users={allUsers}
+                            events={events}
+                            onClose={() => setView('dashboard')}
+                            onLogout={handleLogout}
+                            onDeleteUser={async (id) => { await api.deleteUser(id); setAllUsers(prev => prev.filter(u => u.id !== id)); }}
+                            onDeleteEvent={handleDeleteEvent}
+                            onDeleteMedia={handleDeleteMedia}
+                            onUpdateEvent={handleUpdateEvent}
+                            onUpdateUser={handleUpdateUser}
+                            onNewEvent={() => setShowCreateModal(true)}
+                            onDownloadEvent={downloadEventZip}
+                            t={t}
+                         />
+                    )}
 
-        {view === 'event' && activeEvent && (
-            <EventGallery 
-              event={activeEvent}
-              currentUser={currentUser}
-              hostUser={hostUser}
-              isEventExpired={isEventExpired}
-              isOwner={Boolean(isOwner)}
-              isHostPhotographer={Boolean(isHostPhotographer)}
-              downloadingZip={downloadingZip}
-              applyWatermark={applyWatermarkState}
-              setApplyWatermark={setApplyWatermarkState}
-              onDownloadAll={(media) => downloadEventZip({ ...activeEvent, media: media || activeEvent.media })}
-              onSetCover={handleSetCoverImage}
-              onUpload={initiateMediaAction}
-              onLike={handleLikeMedia}
-              onOpenLiveSlideshow={() => setView('live')}
-              t={t}
-            />
-        )}
+                    {view === 'dashboard' && currentUser && (
+                        <UserDashboard 
+                          events={events}
+                          currentUser={currentUser}
+                          onNewEvent={() => setShowCreateModal(true)}
+                          onSelectEvent={(id) => { setCurrentEventId(id); setView('event'); }}
+                          onRequestUpgrade={() => setShowContactModal(true)}
+                          t={t}
+                        />
+                    )}
 
-        {view === 'live' && activeEvent && (
-            <LiveSlideshow 
-              event={activeEvent}
-              onClose={() => setView('event')}
-              t={t}
-            />
-        )}
-        </>
-      )}
+                    {view === 'event' && activeEvent && (
+                        <EventGallery 
+                          event={activeEvent}
+                          currentUser={currentUser}
+                          hostUser={hostUser}
+                          isEventExpired={isEventExpired}
+                          isOwner={Boolean(isOwner)}
+                          isHostPhotographer={Boolean(isHostPhotographer)}
+                          downloadingZip={downloadingZip}
+                          applyWatermark={applyWatermarkState}
+                          setApplyWatermark={setApplyWatermarkState}
+                          onDownloadAll={(media) => downloadEventZip({ ...activeEvent, media: media || activeEvent.media })}
+                          onSetCover={handleSetCoverImage}
+                          onUpload={initiateMediaAction}
+                          onLike={handleLikeMedia}
+                          onOpenLiveSlideshow={() => setView('live')}
+                          t={t}
+                        />
+                    )}
+                 </div>
+             </div>
+          )}
+          
+          {view === 'live' && activeEvent && (
+                <LiveSlideshow 
+                  event={activeEvent}
+                  onClose={() => setView('event')}
+                  t={t}
+                />
+          )}
+      </div>
 
+      {/* FLOATING ELEMENTS & MODALS (Outside scroll view to stay on top) */}
+      <PWAInstallPrompt t={t} />
+      
       <input type="file" ref={fileInputRef} className="hidden" accept="image/*,video/*" onChange={handleFileUpload} />
       
       {previewMedia && (
@@ -713,7 +793,7 @@ export default function App() {
 
       {isCameraOpen && !previewMedia && <CameraCapture onClose={() => setIsCameraOpen(false)} onCapture={handleCameraCapture} t={t} />}
       {showContactModal && <ContactModal onClose={() => setShowContactModal(false)} t={t} />}
-      {showGuestLogin && <GuestLoginModal onLogin={handleGuestLogin} onRegister={handleGuestRegister} onCancel={() => setShowGuestLogin(false)} t={t} />}
+      {showGuestLogin && <GuestLoginModal onLogin={handleGuestLogin} onRegister={handleSignInRequest} onCancel={() => setShowGuestLogin(false)} t={t} />}
       {showCreateModal && currentUser && <CreateEventModal currentUser={currentUser} onClose={() => setShowCreateModal(false)} onCreate={handleCreateEvent} t={t} />}
       {showStudioSettings && currentUser && <StudioSettingsModal currentUser={currentUser} onClose={() => setShowStudioSettings(false)} onSave={handleUpdateStudioSettings} t={t} />}
     </div>

@@ -22,18 +22,34 @@
     <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
     
     <style>
+      :root {
+        --sat: env(safe-area-inset-top);
+        --sab: env(safe-area-inset-bottom);
+        --sal: env(safe-area-inset-left);
+        --sar: env(safe-area-inset-right);
+      }
+
+      /* APP SHELL SETUP: Lock the body scroll */
+      html, body, #root {
+        height: 100%;
+        width: 100%;
+        overflow: hidden; /* Prevent rubber-banding on iOS */
+        background-color: #f8fafc; /* matches bg-slate-50 */
+        position: fixed; /* Hard lock */
+      }
+
       body {
         font-family: 'Inter', sans-serif;
-        /* Prevent pull-to-refresh on mobile for app-like feel */
         overscroll-behavior-y: none;
       }
-      /* Custom scrollbar for media grid */
+
+      /* Custom scrollbar */
       .no-scrollbar::-webkit-scrollbar {
           display: none;
       }
       .no-scrollbar {
-          -ms-overflow-style: none;  /* IE and Edge */
-          scrollbar-width: none;  /* Firefox */
+          -ms-overflow-style: none;
+          scrollbar-width: none;
       }
       
       @keyframes float {
@@ -68,7 +84,7 @@
 }
 </script>
 </head>
-  <body class="bg-slate-50 text-slate-900 antialiased overflow-x-hidden">
+  <body class="bg-slate-50 text-slate-900 antialiased">
     <div id="root"></div>
   <script type="module" src="/index.tsx"></script>
 </body>

@@ -6,8 +6,11 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'autoUpdate',
+      registerType: 'autoUpdate', // Automatically update the SW
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'masked-icon.svg'],
+      devOptions: {
+        enabled: true // Enable PWA in dev mode for testing
+      },
       manifest: {
         name: 'SnapifY - Event Sharing',
         short_name: 'SnapifY',
@@ -19,33 +22,47 @@ export default defineConfig({
         start_url: '/',
         icons: [
           {
-            src: 'pwa-192x192.png',
+            src: 'https://img.icons8.com/fluency/192/camera.png',
             sizes: '192x192',
             type: 'image/png'
           },
           {
-            src: 'pwa-512x512.png',
+            src: 'https://img.icons8.com/fluency/512/camera.png',
+            sizes: '512x512',
+            type: 'image/png'
+          },
+          {
+            src: 'https://img.icons8.com/fluency/512/camera.png',
             sizes: '512x512',
             type: 'image/png',
-            purpose: 'any maskable'
+            purpose: 'maskable'
           }
-        ]
+        ],
+        share_target: {
+          action: "/",
+          method: "GET",
+          enctype: "application/x-www-form-urlencoded",
+          params: {
+            title: "title",
+            text: "text",
+            url: "url"
+          }
+        }
       },
       workbox: {
-        // 1. Precache standard assets
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
-        
-        // 2. Runtime Caching Strategies
+        // Force waiting to false ensures the new SW takes over immediately
+        skipWaiting: true,
+        clientsClaim: true,
         runtimeCaching: [
           {
-            // Cache Media (Images/Videos) - Offline Gallery Support
             urlPattern: ({ url }) => url.pathname.includes('/api/proxy-media') || url.pathname.includes('/api/media'),
             handler: 'CacheFirst',
             options: {
               cacheName: 'snapify-media-cache',
               expiration: {
                 maxEntries: 500,
-                maxAgeSeconds: 60 * 60 * 24 * 30, // 30 Days
+                maxAgeSeconds: 60 * 60 * 24 * 30,
               },
               cacheableResponse: {
                 statuses: [0, 200]
@@ -53,24 +70,22 @@ export default defineConfig({
             }
           },
           {
-            // Cache API Data - Offline Dashboard Support
             urlPattern: ({ url }) => url.pathname.startsWith('/api/'),
-            handler: 'NetworkFirst', // Try network, fall back to cache if offline
+            handler: 'NetworkFirst',
             options: {
               cacheName: 'snapify-api-cache',
               networkTimeoutSeconds: 5,
               expiration: {
                 maxEntries: 50,
-                maxAgeSeconds: 60 * 60 * 24, // 1 Day
+                maxAgeSeconds: 60 * 60 * 24,
               },
               cacheableResponse: {
                 statuses: [0, 200]
               },
-              // Basic background sync attempt for failed POST requests (Uploads)
               backgroundSync: {
                 name: 'snapify-upload-queue',
                 options: {
-                  maxRetentionTime: 24 * 60 // Retry for up to 24 hours
+                  maxRetentionTime: 24 * 60
                 }
               }
             }
@@ -89,8 +104,5 @@ export default defineConfig({
             }
         }
     }
-  },
-  define: {
-    'process.env': {} 
   }
 });

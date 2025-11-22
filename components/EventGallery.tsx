@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { ShieldCheck, Download, Calendar, LayoutGrid, Camera, Video, Star, Share2, Upload, CheckCircle, Link as LinkIcon, Play, Heart, X, Pause, BookOpen, Send, Lock, Search, ScanFace, Loader2, Trash2, CheckSquare, Square, ChevronLeft, ChevronRight, MessageSquare, Globe, AlertTriangle } from 'lucide-react';
+import { ShieldCheck, Download, Calendar, LayoutGrid, Camera, Video, Star, Share2, Upload, CheckCircle, Link as LinkIcon, Play, Heart, X, Pause, BookOpen, Send, Lock, Search, ScanFace, Loader2, Trash2, CheckSquare, Square, ChevronLeft, ChevronRight, MessageSquare, Globe, AlertTriangle, Plus, ImagePlus } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { Event, User, UserRole, MediaItem, TranslateFn, TierLevel, GuestbookEntry, Comment } from '../types';
 import { api } from '../services/api';
@@ -158,6 +158,23 @@ export const EventGallery: React.FC<EventGalleryProps> = ({
   const [isBulkDeleteMode, setIsBulkDeleteMode] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  // Helper: Check if user can manage (delete/select) a specific item
+  const canManageItem = (item: MediaItem) => {
+      if (!currentUser) return false;
+      // Admin can manage everything
+      if (currentUser.role === UserRole.ADMIN) return true;
+      // Event owner can manage everything
+      if (isOwner) return true;
+      // Regular user can manage ONLY their own uploads
+      return item.uploaderId === currentUser.id;
+  };
+
+  // Helper: Check if user has ANY manageable items in the current view
+  const hasManageableItems = () => {
+      if (!currentUser) return false;
+      return displayMedia.some(item => canManageItem(item));
+  };
+
   // --- REAL-TIME UPDATES & INIT ---
   useEffect(() => {
       socketService.connect();
@@ -238,10 +255,11 @@ export const EventGallery: React.FC<EventGalleryProps> = ({
       
       // Filter for Privacy
       if (!isOwner && currentUser?.role !== UserRole.ADMIN) {
-          media = media.filter(item => item.privacy !== 'private');
+          // Show public items OR items owned by the current user
+          media = media.filter(item => item.privacy !== 'private' || (currentUser && item.uploaderId === currentUser.id));
       }
 
-      // Filter for My Uploads
+      // Filter for My Uploads toggle
       if (showMyUploads && currentUser) {
           media = media.filter(item => item.uploaderId === currentUser.id);
       }
@@ -586,13 +604,25 @@ export const EventGallery: React.FC<EventGalleryProps> = ({
 
           <div className="flex flex-wrap items-center gap-2">
                 {filteredMedia && <button onClick={() => { setFilteredMedia(null); setFindMeImage(null); }} className="flex items-center gap-1 px-3 py-2 text-sm font-bold text-red-600 bg-red-50 rounded-xl hover:bg-red-100"><X size={16} /> {t('clearFilter')}</button>}
+                
+                {/* Enhanced "My Uploads" Toggle */}
                 {currentUser && !isBulkDeleteMode && (
-                    <button onClick={() => setShowMyUploads(!showMyUploads)} className={`p-2 rounded-xl transition-colors ${showMyUploads ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`} title={showMyUploads ? 'Show All Photos' : 'Show My Uploads'}>
+                    <button 
+                      onClick={() => setShowMyUploads(!showMyUploads)} 
+                      className={`p-2 rounded-xl transition-colors ${showMyUploads ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`} 
+                      title={showMyUploads ? t('allPhotos') : t('myUploads')}
+                    >
                         <Upload size={20} />
                     </button>
                 )}
-                {(isOwner || currentUser?.role === UserRole.ADMIN) && displayMedia.length > 0 && (
-                    <button onClick={toggleBulkDeleteMode} className={`p-2 rounded-xl transition-colors ${isBulkDeleteMode ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`} title={isBulkDeleteMode ? t('cancel') : t('selectMedia')}>
+
+                {/* Enable Bulk Mode if user has ANY manageable items */}
+                {hasManageableItems() && displayMedia.length > 0 && (
+                    <button 
+                      onClick={toggleBulkDeleteMode} 
+                      className={`p-2 rounded-xl transition-colors ${isBulkDeleteMode ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`} 
+                      title={isBulkDeleteMode ? t('cancel') : t('selectMedia')}
+                    >
                         {isBulkDeleteMode ? <X size={20} /> : <CheckSquare size={20} />}
                     </button>
                 )}
@@ -652,15 +682,30 @@ export const EventGallery: React.FC<EventGalleryProps> = ({
 
       <div className="mb-24">
         <div className="columns-2 md:columns-3 lg:columns-4 gap-4 space-y-4">
+          {/* "Add Memory" Card - Visual Distinct */}
+          {/* Shows for Owner OR Admin OR Regular User (if not in bulk mode/search) */}
+          {(isOwner || currentUser?.role === UserRole.ADMIN || currentUser) && !isBulkDeleteMode && !searchQuery && (
+              <div onClick={() => onUpload('upload')} className="break-inside-avoid relative group rounded-2xl overflow-hidden bg-gradient-to-br from-indigo-50 to-white border-2 border-dashed border-indigo-200 shadow-sm hover:shadow-md hover:border-indigo-400 transition-all cursor-pointer flex flex-col items-center justify-center min-h-[250px] animate-in fade-in slide-in-from-bottom-4">
+                  <div className="w-16 h-16 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center mb-4 shadow-inner group-hover:scale-110 transition-transform duration-300">
+                      <Plus size={32} strokeWidth={3} />
+                  </div>
+                  <h4 className="font-black text-indigo-900 text-lg">{t('addMemory')}</h4>
+                  <p className="text-indigo-500/80 text-xs font-bold uppercase tracking-wider mt-1">{t('tapToUpload')}</p>
+              </div>
+          )}
+
           {displayMedia.map((item, index) => (
             <div key={item.id} className="break-inside-avoid relative group rounded-2xl overflow-hidden bg-slate-100 shadow-sm hover:shadow-md transition-all cursor-pointer" onClick={() => !isBulkDeleteMode && openLightbox(index)}>
-              {isBulkDeleteMode && (isOwner || currentUser?.role === UserRole.ADMIN) && (
+              
+              {/* Bulk Select Overlay - Only if mode active AND user can manage this specific item */}
+              {isBulkDeleteMode && canManageItem(item) && (
                 <div className="absolute top-0 left-0 right-0 bottom-0 z-20 bg-black/10 flex items-start justify-end p-3">
                   <button onClick={(e) => { e.stopPropagation(); toggleMediaSelection(item.id); }} className={`w-6 h-6 rounded-full flex items-center justify-center transition-all shadow-sm ${selectedMedia.has(item.id) ? 'bg-indigo-600 text-white' : 'bg-white text-slate-400'}`}>
                     {selectedMedia.has(item.id) ? <CheckSquare size={14} /> : <Square size={14} />}
                   </button>
                 </div>
               )}
+
               {item.type === 'video' ? (
                   <VideoGridItem item={item} onClick={() => !isBulkDeleteMode && openLightbox(index)} />
               ) : (
@@ -711,19 +756,40 @@ export const EventGallery: React.FC<EventGalleryProps> = ({
                       {item.likes ? <span className="text-xs font-bold text-red-500">{item.likes}</span> : null}
                   </button>
               )}
+              {/* Star Cover Icon - Host Only */}
               {(isOwner || currentUser?.role === UserRole.ADMIN) && item.type === 'image' && !isBulkDeleteMode && (
                 <button onClick={(e) => { e.stopPropagation(); onSetCover(item); }} className="absolute top-3 left-3 bg-black/40 backdrop-blur-md rounded-full p-1.5 text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-indigo-600 pointer-events-auto z-10"><Star size={14} /></button>
               )}
             </div>
           ))}
         </div>
+
+        {/* Refined Empty State Logic */}
         {displayMedia.length === 0 && (
           <div className="text-center py-20 bg-slate-50 rounded-3xl border-2 border-dashed border-slate-200">
             <div className="mx-auto w-16 h-16 bg-white rounded-full shadow-sm flex items-center justify-center mb-4">
               {searchQuery ? <Search className="text-slate-300" size={32} /> : <Camera className="text-slate-300" size={32} />}
             </div>
             <h3 className="text-lg font-medium text-slate-900">{searchQuery ? 'No matches found' : t('noPhotos')}</h3>
-            <p className="text-slate-500">{searchQuery ? 'Try a different search term' : t('beFirst')}</p>
+            
+            {/* Host specific CTA */}
+            {isOwner && !searchQuery && (
+                <div className="mt-4">
+                    <p className="text-slate-500 mb-4">Your event is live! Start the gallery.</p>
+                    <button 
+                        onClick={() => onUpload('upload')} 
+                        className="bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-indigo-700 transition-colors flex items-center gap-2 mx-auto shadow-lg"
+                    >
+                        <Upload size={18} />
+                        {t('upload')}
+                    </button>
+                </div>
+            )}
+            
+            {!isOwner && !searchQuery && (
+                <p className="text-slate-500">{t('beFirst')}</p>
+            )}
+
             {searchQuery && <button onClick={() => setSearchQuery('')} className="mt-4 text-indigo-600 font-bold hover:underline">Clear Search</button>}
           </div>
         )}
@@ -753,21 +819,35 @@ export const EventGallery: React.FC<EventGalleryProps> = ({
           </div>
       )}
 
-      <div className="fixed bottom-8 left-0 right-0 flex justify-center z-40 pointer-events-auto">
-        {/* ... (Bottom controls remain same) ... */}
-        <div className="flex items-center gap-3 bg-white/90 backdrop-blur-xl p-2.5 rounded-full shadow-2xl border border-slate-200 ring-4 ring-black/5">
-          {currentUser?.role === UserRole.PHOTOGRAPHER && (
-            <button onClick={() => setApplyWatermark(!applyWatermark)} className={`w-12 h-12 rounded-full flex items-center justify-center transition-colors ${applyWatermark ? 'bg-amber-500 text-white' : 'bg-slate-100 text-slate-400'}`} title={t('watermark')}><ShieldCheck size={20} /></button>
-          )}
-          {currentUser?.role === UserRole.PHOTOGRAPHER && <div className="w-px h-8 bg-slate-300 mx-1"></div>}
-          {isMobile && (
-            <>
-              <button onClick={() => onUpload('camera')} className="bg-black text-white h-14 px-6 rounded-full shadow-lg flex items-center gap-2 hover:bg-slate-800 transition-colors active:scale-95"><Camera size={24} /> <span className="font-bold">{t('snap')}</span></button>
-              <div className="w-px h-8 bg-slate-300 mx-1"></div>
-            </>
-          )}
-          <button onClick={() => onUpload('upload')} className="w-12 h-12 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center hover:bg-indigo-200 transition-colors" title={t('upload')}><Upload size={22} /></button>
-          <button onClick={() => setShowShareModal(true)} className="w-12 h-12 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center hover:bg-indigo-100 transition-colors"><Share2 size={22} /></button>
+      {/* UPDATED: Safe area bottom spacing for the fixed bar */}
+      <div className="fixed bottom-[calc(2rem+env(safe-area-inset-bottom))] left-0 right-0 flex justify-center z-40 pointer-events-auto">
+        {/* Revised Action Island */}
+        <div className="flex items-center gap-4 p-2 pr-3 pl-3 bg-black/80 backdrop-blur-xl rounded-full shadow-2xl border border-white/10 text-white">
+             {/* Camera Button (Mobile) */}
+             {isMobile && (
+                <button onClick={() => onUpload('camera')} className="flex flex-col items-center justify-center w-12 h-12 rounded-full bg-white text-black shadow-lg active:scale-95 transition-transform">
+                    <Camera size={24} />
+                </button>
+             )}
+             
+             {/* Upload Button */}
+             <button onClick={() => onUpload('upload')} className={`flex flex-col items-center justify-center w-12 h-12 rounded-full transition-colors ${isMobile ? 'bg-white/10 hover:bg-white/20' : 'bg-white text-black shadow-lg hover:bg-slate-100'}`}>
+                 <ImagePlus size={24} />
+             </button>
+
+             <div className="w-px h-8 bg-white/20" />
+
+             {/* Share */}
+             <button onClick={() => setShowShareModal(true)} className="flex flex-col items-center justify-center w-10 h-10 rounded-full text-white/80 hover:text-white hover:bg-white/10 transition-colors">
+                 <Share2 size={20} />
+             </button>
+             
+             {/* Watermark Toggle (Photographer only) */}
+             {currentUser?.role === UserRole.PHOTOGRAPHER && (
+                <button onClick={() => setApplyWatermark(!applyWatermark)} className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${applyWatermark ? 'bg-amber-400 text-black' : 'text-white/50 hover:text-white'}`}>
+                    <ShieldCheck size={20} />
+                </button>
+             )}
         </div>
       </div>
 
@@ -781,7 +861,7 @@ export const EventGallery: React.FC<EventGalleryProps> = ({
             onPointerCancel={onPointerUp}
             onPointerLeave={onPointerUp}
           >
-              <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-center z-50 bg-gradient-to-b from-black/60 to-transparent">
+              <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-center z-50 bg-gradient-to-b from-black/60 to-transparent pt-[env(safe-area-inset-top)]">
                   <div className="text-white/80 text-sm font-medium">{lightboxIndex + 1} / {displayMedia.length}</div>
                   <div className="flex gap-3">
                       <button onClick={() => setIsSlideshowPlaying(!isSlideshowPlaying)} className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors">{isSlideshowPlaying ? <Pause size={20} /> : <Play size={20} />}</button>
@@ -831,7 +911,7 @@ export const EventGallery: React.FC<EventGalleryProps> = ({
                   </div>
                   
                   {/* Caption Overlay (Static on top) */}
-                  <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 via-black/70 to-transparent p-6 flex flex-col gap-4 max-h-[40vh] overflow-y-auto pointer-events-auto" onClick={e => e.stopPropagation()}>
+                  <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 via-black/70 to-transparent p-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] flex flex-col gap-4 max-h-[40vh] overflow-y-auto pointer-events-auto" onClick={e => e.stopPropagation()}>
                       <div className="text-center mb-2">
                           {displayMedia[lightboxIndex].privacy === 'private' && (
                               <div className="flex items-center justify-center gap-1 text-amber-400 mb-1 text-xs font-bold uppercase tracking-wider">

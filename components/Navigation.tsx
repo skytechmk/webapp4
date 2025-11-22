@@ -10,9 +10,10 @@ interface NavigationProps {
   language: Language;
   onChangeLanguage: (lang: Language) => void;
   onLogout: () => void;
+  onSignIn?: () => void; // NEW PROP
   onHome: () => void;
   onBack: () => void;
-  onToAdmin?: () => void; // Added prop
+  onToAdmin?: () => void;
   onOpenSettings?: () => void;
   t: TranslateFn;
 }
@@ -25,6 +26,7 @@ export const Navigation: React.FC<NavigationProps> = ({
   language,
   onChangeLanguage,
   onLogout,
+  onSignIn, // Destructure
   onHome,
   onBack,
   onToAdmin,
@@ -60,7 +62,8 @@ export const Navigation: React.FC<NavigationProps> = ({
   };
 
   return (
-    <header className="bg-white/80 backdrop-blur-md border-b border-slate-200 sticky top-0 z-40 transition-all duration-200">
+    // Added pt-[env(safe-area-inset-top)] here
+    <header className="bg-white/90 backdrop-blur-md border-b border-slate-200 sticky top-0 z-40 transition-all duration-200 pt-[env(safe-area-inset-top)]">
       <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between">
         
         <div className="flex items-center gap-3 overflow-hidden">
@@ -82,7 +85,10 @@ export const Navigation: React.FC<NavigationProps> = ({
             
             <div className="flex flex-col truncate">
                 {isEventView && currentEventTitle ? (
-                    <h1 className="text-lg font-bold text-slate-900 truncate leading-tight">{currentEventTitle}</h1>
+                    <>
+                        <h1 className="text-lg font-bold text-slate-900 truncate leading-tight">{currentEventTitle}</h1>
+                        <span className="text-xs text-slate-500 font-medium">{t('appSubtitle')}</span>
+                    </>
                 ) : (
                     <span className="text-xl font-bold text-slate-900 tracking-tight">{t('appName')}</span>
                 )}
@@ -164,7 +170,7 @@ export const Navigation: React.FC<NavigationProps> = ({
                     )}
                     {/* Sign In Button for Guests */}
                     <button 
-                        onClick={onLogout} // onLogout resets view to landing
+                        onClick={onSignIn || onLogout} // Use dedicated handler if available
                         className="flex items-center gap-2 px-4 py-2 rounded-full bg-slate-900 text-white text-sm font-bold hover:bg-slate-800 transition-colors"
                     >
                         <LogIn size={16} />

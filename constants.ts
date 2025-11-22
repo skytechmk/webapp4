@@ -4,6 +4,7 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
   en: {
     // ... existing translations ...
     appName: "SnapifY",
+    appSubtitle: "Event Sharing Platform", // Added this
     heroTitlePrefix: "Relive the Magic,",
     heroTitleSuffix: "Forever Yours",
     heroDesc: "Create shared albums for birthdays, weddings, and parties in seconds. Let your guests capture the magic with AI-enhanced organization.",
@@ -217,11 +218,31 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     untitled: "Untitled",
     by: "by",
     close: "Close",
-    // NEW
-    findMeDevMode: "⚠️ Experimental Feature: This feature is currently in development."
+    findMeDevMode: "⚠️ Experimental Feature: This feature is currently in development.",
+    // PWA Strings
+    installApp: "Install App",
+    installAppDesc: "Install SnapifY for a better experience.",
+    install: "Install",
+    offlineMode: "You are currently offline",
+    // New UI Strings
+    addMemory: "Add Memory",
+    tapToUpload: "TAP TO UPLOAD",
+    loginHost: "Already have an account? Sign In",
+    // New Modal Strings
+    chooseAccess: "How would you like to join?",
+    guestAccess: "Guest Access",
+    continueAsGuest: "Continue as Guest",
+    quickUpload: "Quick Uploads",
+    publicGallery: "Public Gallery",
+    memberLogin: "Login / Sign Up",
+    privateUploadsHistory: "Private uploads & event history",
   },
   mk: {
-     // ... existing translations ...
+    // ... existing translations ...
+    appSubtitle: "Платформа за споделување настани",
+    loginHost: "Веќе имате профил? Најавете се",
+    addMemory: "Додади спомен",
+    tapToUpload: "ДОПРИ ЗА ПРИКАЧУВАЊЕ",
     appName: "SnapifY",
     heroTitlePrefix: "Забавувај се.",
     heroTitleSuffix: "Сликај веднаш.",
@@ -436,11 +457,27 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     untitled: "Без наслов",
     by: "од",
     close: "Затвори",
-    // NEW
-    findMeDevMode: "⚠️ Експериментална функција: Оваа опција е моментално во развој."
+    findMeDevMode: "⚠️ Експериментална функција: Оваа опција е моментално во развој.",
+    // PWA Strings
+    installApp: "Инсталирај Апликација",
+    installAppDesc: "Инсталирај SnapifY за подобро искуство.",
+    install: "Инсталирај",
+    offlineMode: "Моментално сте офлајн",
+    // New Modal Strings
+    chooseAccess: "Како сакате да се приклучите?",
+    guestAccess: "Гостински пристап",
+    continueAsGuest: "Продолжи како гостин",
+    quickUpload: "Брзо прикачување",
+    publicGallery: "Јавна галерија",
+    memberLogin: "Најава / Регистрација",
+    privateUploadsHistory: "Приватни слики и историја",
   },
   tr: {
     // ... existing translations ...
+    appSubtitle: "Etkinlik Paylaşım Platformu", // Added this
+    loginHost: "Zaten hesabınız var mı? Giriş Yap",
+    addMemory: "Anı Ekle",
+    tapToUpload: "YÜKLEMEK İÇİN DOKUN",
     appName: "SnapifY",
     heroTitlePrefix: "Partile.",
     heroTitleSuffix: "Anında Çek.",
@@ -656,10 +693,30 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     by: "tarafından",
     close: "Kapat",
     // NEW
-    findMeDevMode: "⚠️ Deneysel Özellik: Bu özellik şu anda geliştirme aşamasındadır."
+    findMeDevMode: "⚠️ Deneysel Özellik: Bu özellik şu anda geliştirme aşamasındadır.",
+    installApp: "Uygulamayı Yükle",
+    installAppDesc: "Daha iyi bir deneyim için SnapifY'ı yükleyin.",
+    install: "Yükle",
+    offlineMode: "Şu anda çevrimdışısınız",
+    // New UI Strings
+    addMemory: "Anı Ekle",
+    tapToUpload: "YÜKLEMEK İÇİN DOKUN",
+    loginHost: "Zaten hesabınız var mı? Giriş Yap",
+    // New Modal Strings
+    chooseAccess: "Nasıl katılmak istersiniz?",
+    guestAccess: "Misafir Girişi",
+    continueAsGuest: "Misafir Olarak Devam Et",
+    quickUpload: "Hızlı Yükleme",
+    publicGallery: "Herkese Açık Galeri",
+    memberLogin: "Giriş Yap / Kayıt Ol",
+    privateUploadsHistory: "Özel yüklemeler ve etkinlik geçmişi",
   },
   sq: {
     // ... existing translations ...
+    appSubtitle: "Platformë për Ndarjen e Ngjarjeve", // Added this
+    loginHost: "Keni llogari? Hyni",
+    addMemory: "Shto Kujtime",
+    tapToUpload: "PREK PËR TË NGARKUAR",
     appName: "SnapifY",
     heroTitlePrefix: "Festo Fort.",
     heroTitleSuffix: "Shkrep Tani.",
@@ -875,7 +932,23 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     by: "nga",
     close: "Mbyll",
     // NEW
-    findMeDevMode: "⚠️ Veçori Eksperimentale: Kjo veçori është aktualisht në zhvillim."
+    findMeDevMode: "⚠️ Veçori Eksperimentale: Kjo veçori është aktualisht në zhvillim.",
+    installApp: "Instalo Aplikacionin",
+    installAppDesc: "Instalo SnapifY për një përvojë më të mirë.",
+    install: "Instalo",
+    offlineMode: "Ju jeni aktualisht offline",
+    // New UI Strings
+    addMemory: "Shto Kujtime",
+    tapToUpload: "PREK PËR TË NGARKUAR",
+    loginHost: "Keni llogari? Hyni",
+    // New Modal Strings
+    chooseAccess: "Si dëshironi të bashkoheni?",
+    guestAccess: "Qasje si Mysafir",
+    continueAsGuest: "Vazhdo si Mysafir",
+    quickUpload: "Ngarkime të Shpejta",
+    publicGallery: "Galeri Publike",
+    memberLogin: "Hyni / Regjistrohuni",
+    privateUploadsHistory: "Ngarkime private & historia e ngjarjeve",
   }
 };
 
