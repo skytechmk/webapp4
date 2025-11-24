@@ -1,7 +1,7 @@
 import { User, Event, MediaItem, GuestbookEntry, Comment, Vendor } from '../types';
 
 // @ts-ignore
-const API_URL = import.meta.env.VITE_API_URL || ''; 
+const API_URL = import.meta.env.VITE_API_URL || (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3001');
 
 const getAuthHeaders = () => {
     const token = localStorage.getItem('snapify_token');
@@ -68,9 +68,23 @@ export const api = {
     },
     
     fetchEventById: async (eventId: string): Promise<Event> => {
-        const res = await fetch(`${API_URL}/api/events/${eventId}`);
-        if (!res.ok) throw new Error(`Failed to fetch event`);
+        console.log('fetchEventById called for:', eventId);
+        const headers = getAuthHeaders();
+        console.log('Auth headers for event fetch:', headers);
+        const res = await fetch(`${API_URL}/api/events/${eventId}`, {
+            headers: {
+                'Content-Type': 'application/json',
+                ...headers
+            }
+        });
+        console.log('Event fetch response status:', res.status);
+        if (!res.ok) {
+            const errorText = await res.text();
+            console.error('Event fetch failed:', res.status, errorText);
+            throw new Error(`Failed to fetch event: ${res.status}`);
+        }
         const data = await res.json();
+        console.log('Event data received:', data.title);
         return {
             ...data,
             media: data.media.map((m: any) => ({ ...m, isWatermarked: !!m.isWatermarked }))

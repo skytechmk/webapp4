@@ -40,8 +40,8 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@skytech.mk';
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123'; 
-const JWT_SECRET = process.env.JWT_SECRET || 'dev_jwt_secret_change_in_production';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123'; // SECURITY: Change this in production!
+const JWT_SECRET = process.env.JWT_SECRET || 'dev_jwt_secret_change_in_production'; // SECURITY: Generate a secure random secret for production!
 const JWT_EXPIRY = '7d'; 
 
 // Domain Management
@@ -53,8 +53,8 @@ const ALLOWED_ORIGINS = process.env.NODE_ENV === 'production'
 const S3_ENDPOINT = process.env.S3_ENDPOINT || 'http://192.168.20.153:9000';
 const S3_REGION = process.env.S3_REGION || 'us-east-1';
 const S3_BUCKET = process.env.S3_BUCKET_NAME || 'snapify-media';
-const S3_ACCESS_KEY = process.env.S3_ACCESS_KEY || 'minioadmin';
-const S3_SECRET_KEY = process.env.S3_SECRET_KEY || 'minioadmin';
+const S3_ACCESS_KEY = process.env.S3_ACCESS_KEY || 'snapify_admin';
+const S3_SECRET_KEY = process.env.S3_SECRET_KEY || 'StrongPassword123!';
 
 const s3Client = new S3Client({
     region: S3_REGION,
@@ -432,7 +432,18 @@ async function attachPublicUrls(mediaList) {
     }));
 }
 
-app.get('/api/health', (req, res) => res.json({ status: 'ok', uptime: process.uptime() }));
+app.get('/api/health', (req, res) => {
+    const health = {
+        status: 'ok',
+        uptime: process.uptime(),
+        timestamp: new Date().toISOString(),
+        memory: process.memoryUsage(),
+        version: process.version,
+        platform: process.platform,
+        database: 'connected' // Could add actual DB health check
+    };
+    res.json(health);
+});
 
 app.post('/api/auth/login', async (req, res) => {
     const { email, password } = req.body;
@@ -599,7 +610,7 @@ app.get('/api/vendors', (req, res) => {
 
 app.get('/api/events', authenticateToken, (req, res) => {
     const callerId = req.user.id;
-    const query = req.user.role === 'ADMIN' 
+    const query = req.user.role === 'ADMIN'
         ? `SELECT events.*, users.tier as hostTier FROM events JOIN users ON events.hostId = users.id`
         : `SELECT events.*, users.tier as hostTier FROM events JOIN users ON events.hostId = users.id WHERE events.hostId = ?`;
     const params = req.user.role === 'ADMIN' ? [] : [callerId];
@@ -616,6 +627,39 @@ app.get('/api/events', authenticateToken, (req, res) => {
             }));
             res.json(detailed);
         } catch (e) { res.status(500).json({ error: 'Failed' }); }
+    });
+});
+
+// NEW: Public endpoint for fetching single event by ID (for QR codes and sharing)
+app.get('/api/events/:id', (req, res) => {
+    const eventId = req.params.id;
+
+    db.get(`SELECT events.*, users.tier as hostTier FROM events JOIN users ON events.hostId = users.id WHERE events.id = ?`, [eventId], async (err, event) => {
+        if (err) return res.status(500).json({ error: err.message });
+        if (!event) return res.status(404).json({ error: 'Event not found' });
+
+        // Check if event is expired
+        if (event.expiresAt && new Date() > new Date(event.expiresAt)) {
+            return res.status(410).json({ error: 'Event has expired' });
+        }
+
+        try {
+            const media = await new Promise(resolve => db.all("SELECT * FROM media WHERE eventId = ? ORDER BY uploadedAt DESC", [eventId], (err, rows) => resolve(rows || [])));
+            const signedMedia = await attachPublicUrls(media);
+            let signedCover = event.coverImage;
+            if (event.coverImage && !event.coverImage.startsWith('http')) signedCover = getPublicUrl(event.coverImage);
+
+            const publicEvent = {
+                ...event,
+                media: signedMedia,
+                coverImage: signedCover,
+                hasPin: !!event.pin
+            };
+
+            res.json(publicEvent);
+        } catch (e) {
+            res.status(500).json({ error: 'Failed to fetch event' });
+        }
     });
 });
 

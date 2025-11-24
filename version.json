@@ -1,0 +1,10 @@
+{
+  "version": "2.2.1",
+  "buildTime": "2025-11-24T01:24:00Z",
+  "changes": [
+    "Fixed QR code guest access 401 errors",
+    "Fixed mobile upload functionality",
+    "Added automatic cache invalidation",
+    "Improved error handling for guest users"
+  ]
+}

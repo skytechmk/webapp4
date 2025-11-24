@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { ShieldCheck, Download, Calendar, LayoutGrid, Camera, Video, Star, Share2, Upload, CheckCircle, Link as LinkIcon, Play, Heart, X, Pause, BookOpen, Send, Lock, Search, ScanFace, Loader2, Trash2, CheckSquare, Square, ChevronLeft, ChevronRight, MessageSquare, Globe, AlertTriangle, Plus, ImagePlus, MapPin } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { Event, User, UserRole, MediaItem, TranslateFn, TierLevel, GuestbookEntry, Comment, Vendor } from '../types';
@@ -7,6 +7,7 @@ import { socketService } from '../services/socketService';
 import { isMobileDevice } from '../utils/deviceDetection';
 import { ShareModal } from './ShareModal';
 import { VendorAdCard } from './VendorAdCard';
+import { usePerformanceMonitor } from '../hooks/usePerformanceMonitor';
 
 declare global {
     interface Window {
@@ -117,7 +118,7 @@ interface EventGalleryProps {
   t: TranslateFn;
 }
 
-export const EventGallery: React.FC<EventGalleryProps> = ({
+export const EventGallery = React.memo<EventGalleryProps>(({
   event,
   currentUser,
   hostUser,
@@ -134,6 +135,8 @@ export const EventGallery: React.FC<EventGalleryProps> = ({
   onOpenLiveSlideshow,
   t
 }) => {
+  usePerformanceMonitor('EventGallery');
+
   // State
   const [localMedia, setLocalMedia] = useState<MediaItem[]>(event.media);
   const [localGuestbook, setLocalGuestbook] = useState<GuestbookEntry[]>(event.guestbook || []);
@@ -332,9 +335,9 @@ export const EventGallery: React.FC<EventGalleryProps> = ({
       return media;
   };
 
-  const displayMedia = getDisplayMedia();
+  const displayMedia = useMemo(() => getDisplayMedia(), [localMedia, showMyUploads, searchQuery, currentUser, isOwner]);
   const isStudioTier = hostUser?.tier === TierLevel.STUDIO;
-  const qrFgColor = isStudioTier ? '#4f46e5' : '#000000'; 
+  const qrFgColor = isStudioTier ? '#4f46e5' : '#000000';
 
   const openLightbox = (index: number) => {
       setLightboxIndex(index);
@@ -585,11 +588,11 @@ export const EventGallery: React.FC<EventGalleryProps> = ({
             ) : (
               // Updated Image Grid Item with Fallback
               <div className="w-full h-auto bg-slate-200 relative min-h-[100px]">
-                  <img 
-                      src={item.previewUrl || item.url} 
-                      alt={item.caption} 
-                      className="w-full h-full object-cover" 
-                      loading="lazy" 
+                  <img
+                      src={item.previewUrl || item.url}
+                      alt={item.caption || `Photo by ${item.uploaderName}`}
+                      className="w-full h-full object-cover"
+                      loading="lazy"
                       onError={(e) => {
                           e.currentTarget.style.display = 'none';
                           e.currentTarget.parentElement?.querySelector('.error-placeholder')?.classList.remove('hidden');
@@ -822,8 +825,8 @@ export const EventGallery: React.FC<EventGalleryProps> = ({
       <div className="mb-24">
         <div className="columns-2 md:columns-3 lg:columns-4 gap-4 space-y-4">
           {/* "Add Memory" Card - Visual Distinct */}
-          {/* Shows for Owner OR Admin OR Regular User (if not in bulk mode/search) */}
-          {(isOwner || currentUser?.role === UserRole.ADMIN || currentUser) && !isBulkDeleteMode && !searchQuery && (
+          {/* Shows for Owner OR Admin OR Any User (including guests) if not in bulk mode/search */}
+          {!isBulkDeleteMode && !searchQuery && (
               <div onClick={() => onUpload('upload')} className="break-inside-avoid relative group rounded-2xl overflow-hidden bg-gradient-to-br from-indigo-50 to-white border-2 border-dashed border-indigo-200 shadow-sm hover:shadow-md hover:border-indigo-400 transition-all cursor-pointer flex flex-col items-center justify-center min-h-[250px] animate-in fade-in slide-in-from-bottom-4 mb-4">
                   <div className="w-16 h-16 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center mb-4 shadow-inner group-hover:scale-110 transition-transform duration-300">
                       <Plus size={32} strokeWidth={3} />
@@ -898,13 +901,21 @@ export const EventGallery: React.FC<EventGalleryProps> = ({
         <div className="flex items-center gap-4 p-2 pr-3 pl-3 bg-black/80 backdrop-blur-xl rounded-full shadow-2xl border border-white/10 text-white">
              {/* Camera Button (Mobile) */}
              {isMobile && (
-                <button onClick={() => onUpload('camera')} className="flex flex-col items-center justify-center w-12 h-12 rounded-full bg-white text-black shadow-lg active:scale-95 transition-transform">
-                    <Camera size={24} />
-                </button>
+               <button
+                 onClick={() => onUpload('camera')}
+                 className="flex flex-col items-center justify-center w-12 h-12 rounded-full bg-white text-black shadow-lg active:scale-95 transition-transform"
+                 aria-label="Take photo with camera"
+               >
+                   <Camera size={24} />
+               </button>
              )}
-             
+
              {/* Upload Button */}
-             <button onClick={() => onUpload('upload')} className={`flex flex-col items-center justify-center w-12 h-12 rounded-full transition-colors ${isMobile ? 'bg-white/10 hover:bg-white/20' : 'bg-white text-black shadow-lg hover:bg-slate-100'}`}>
+             <button
+               onClick={() => onUpload('upload')}
+               className={`flex flex-col items-center justify-center w-12 h-12 rounded-full transition-colors ${isMobile ? 'bg-white/10 hover:bg-white/20' : 'bg-white text-black shadow-lg hover:bg-slate-100'}`}
+               aria-label="Upload photos from gallery"
+             >
                  <ImagePlus size={24} />
              </button>
 
@@ -1031,4 +1042,4 @@ export const EventGallery: React.FC<EventGalleryProps> = ({
       {showShareModal && <ShareModal eventId={event.id} eventTitle={event.title} onClose={() => setShowShareModal(false)} t={t} />}
     </main>
   );
-};
+});

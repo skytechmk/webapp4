@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, Suspense } from 'react';
 // @ts-ignore
 import JSZip from 'jszip';
 // @ts-ignore
@@ -7,23 +7,28 @@ import { User, Event, MediaItem, UserRole, TierLevel, Language, TranslateFn, TIE
 import { api } from './services/api';
 import { TRANSLATIONS } from './constants';
 // CameraCapture import removed - switching to native camera
-import { AdminDashboard } from './components/AdminDashboard';
 import { Navigation } from './components/Navigation';
-import { LandingPage } from './components/LandingPage';
-import { UserDashboard } from './components/UserDashboard';
-import { EventGallery } from './components/EventGallery';
 import { CreateEventModal } from './components/CreateEventModal';
 import { ContactModal } from './components/ContactModal';
 import { GuestLoginModal } from './components/GuestLoginModal';
 import { StudioSettingsModal } from './components/StudioSettingsModal';
 import { MediaReviewModal } from './components/MediaReviewModal';
-import { LiveSlideshow } from './components/LiveSlideshow';
 import { PWAInstallPrompt } from './components/PWAInstallPrompt';
 import { OfflineBanner } from './components/OfflineBanner';
 import { ShareTargetHandler } from './components/ShareTargetHandler';
 import { ReloadPrompt } from './components/ReloadPrompt';
+import { ErrorBoundary } from './components/ErrorBoundary';
+import { EventSkeleton } from './components/LoadingSkeleton';
+import { ShieldAlert } from 'lucide-react';
+import { lazy } from 'react';
+
+import { DashboardView } from './components/views/DashboardView';
+
+const LandingView = lazy(() => import('./components/views/LandingView').then(module => ({ default: module.LandingView })));
+const EventView = lazy(() => import('./components/views/EventView').then(module => ({ default: module.EventView })));
 import { applyWatermark } from './utils/imageProcessing';
 import { getStoredUserId, isKnownDevice, clearDeviceFingerprint } from './utils/deviceFingerprint';
+import { isMobileDevice } from './utils/deviceDetection';
 import { socketService } from './services/socketService';
 
 // Safe access to env variables
@@ -75,6 +80,8 @@ declare global {
 }
 
 export default function App() {
+  console.log('🚀 Snapify App v2.2 loaded at:', new Date().toISOString());
+
   // -- State --
   const [view, setView] = useState<'landing' | 'dashboard' | 'event' | 'admin' | 'live'>('landing');
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -122,7 +129,7 @@ export default function App() {
 
       const handleForceReload = async () => {
           console.log("Received force reload signal from admin.");
-          
+
           // 1. Unregister Service Workers
           if ('serviceWorker' in navigator) {
               const registrations = await navigator.serviceWorker.getRegistrations();
@@ -130,7 +137,7 @@ export default function App() {
                   await registration.unregister();
               }
           }
-          
+
           // 2. Clear specific caches if possible (optional, reload usually handles it if SW is gone)
           if ('caches' in window) {
               const cacheNames = await caches.keys();
@@ -145,9 +152,69 @@ export default function App() {
 
       socketService.on('force_client_reload', handleForceReload);
 
+      // AUTO FORCE RELOAD ON VERSION MISMATCH (for development)
+      const checkVersion = async () => {
+          try {
+              const response = await fetch('/version.json?' + Date.now());
+              if (response.ok) {
+                  const data = await response.json();
+                  const currentVersion = data.version;
+                  const storedVersion = localStorage.getItem('snapify_version');
+
+                  if (storedVersion !== currentVersion) {
+                      console.log('Version mismatch detected, forcing cache clear and reload');
+                      localStorage.setItem('snapify_version', currentVersion);
+
+                      // Force service worker update
+                      if ('serviceWorker' in navigator) {
+                          const registrations = await navigator.serviceWorker.getRegistrations();
+                          for (const registration of registrations) {
+                              await registration.update();
+                          }
+                      }
+
+                      // Clear caches
+                      if ('caches' in window) {
+                          const cacheNames = await caches.keys();
+                          await Promise.all(cacheNames.map(name => caches.delete(name)));
+                      }
+
+                      // Reload after a short delay
+                      setTimeout(() => window.location.reload(), 1000);
+                  }
+              }
+          } catch (e) {
+              // Version check failed, continue normally
+          }
+      };
+
+      checkVersion();
+
       return () => {
           socketService.off('force_client_reload', handleForceReload);
       };
+  }, []);
+
+  // -- FIX: Force cache refresh for iOS PWA issues --
+  useEffect(() => {
+      const forceCacheRefresh = async () => {
+          // Check if this is an iOS device with potential cache issues
+          const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+          const isPWA = window.matchMedia('(display-mode: standalone)').matches;
+
+          if (isIOS && isPWA) {
+              // Force refresh cache on app launch for iOS PWA
+              try {
+                  const cacheNames = await caches.keys();
+                  await Promise.all(cacheNames.map(name => caches.delete(name)));
+                  console.log('iOS PWA cache cleared');
+              } catch (error) {
+                  console.warn('Failed to clear iOS PWA cache:', error);
+              }
+          }
+      };
+
+      forceCacheRefresh();
   }, []);
 
   // -- Real-time User Updates --
@@ -175,58 +242,136 @@ export default function App() {
 
   // -- Initialization --
   const loadInitialData = async () => {
+      console.log('🚀 loadInitialData starting...');
       try {
+          console.log('🚀 Inside try block of loadInitialData');
           const token = localStorage.getItem('snapify_token');
           const storedUserId = localStorage.getItem('snapify_user_id');
-          
+
+          console.log('loadInitialData: Checking authentication', { token: !!token, storedUserId });
+
           let currentUserFromStorage: User | null = null;
 
-          if (token && storedUserId) {
-              try {
-                  const savedUserStr = localStorage.getItem('snapify_user_obj');
-                  if (savedUserStr) {
-                      currentUserFromStorage = JSON.parse(savedUserStr);
-                      setCurrentUser(currentUserFromStorage);
-                  }
-                  const eventsData = await api.fetchEvents();
-                  setEvents(eventsData);
-                  
-                  if (currentUserFromStorage?.role === UserRole.ADMIN) {
-                      const usersData = await api.fetchUsers();
-                      setAllUsers(usersData);
-                  }
-              } catch (e) {
-                  console.warn("Session expired or invalid", e);
-                  handleLogout();
-                  currentUserFromStorage = null;
-              }
-          }
-
+          // Handle shared event from URL first (works for both authenticated and guest users)
           const params = new URLSearchParams(window.location.search);
           const sharedEventId = params.get('event');
-          
+          let sharedEventLoaded = false;
+
+          console.log("App initialization - URL params:", { sharedEventId, fullUrl: window.location.href });
+
           if (sharedEventId) {
+               console.log("Detected shared event ID in URL:", sharedEventId);
                try {
+                   console.log("Loading shared event:", sharedEventId);
                    const sharedEvent = await api.fetchEventById(sharedEventId);
                    if (sharedEvent) {
+                       console.log("Shared event loaded successfully:", sharedEvent.title);
                        setEvents(prev => {
                            if (!prev.find(e => e.id === sharedEventId)) return [...prev, sharedEvent];
                            return prev;
                        });
                        setCurrentEventId(sharedEventId);
-                       setView('event'); 
                        incrementEventViews(sharedEventId, [sharedEvent]);
+                       sharedEventLoaded = true;
+
+                       // FIX: Don't return early - continue with authentication check
+                       // This ensures logged-in users maintain their session when scanning QR codes
+                       // The view will be set to 'event' but authentication will still be checked
+                   } else {
+                       console.warn("Shared event returned null for ID:", sharedEventId);
+                       alert("Event not found. Please check the link and try again.");
+                       // Clear the invalid event parameter from URL
+                       const url = new URL(window.location.href);
+                       url.searchParams.delete('event');
+                       window.history.replaceState({}, '', url.toString());
                    }
-               } catch (error) {
+               } catch (error: any) {
                    console.error("Failed to fetch shared event", error);
-                   if (currentUserFromStorage) {
-                       setView(currentUserFromStorage.role === UserRole.ADMIN ? 'admin' : 'dashboard');
+                   // CRITICAL FIX: Don't clear the URL parameter on API failure
+                   // This allows users to refresh and try again
+                   console.log("Keeping event parameter in URL for retry on refresh");
+
+                   // Show specific error messages but keep URL for retry
+                   if (error.message?.includes('404') || error.message?.includes('Not Found')) {
+                       alert("Event not found. Please check the link and try again.");
+                   } else if (error.message?.includes('410') || error.message?.includes('expired')) {
+                       alert("This event has expired and is no longer accessible.");
+                   } else {
+                       alert("Unable to load event. Please try again later.");
                    }
+
+                   // DON'T clear the URL - allow refresh to retry
+                   // const url = new URL(window.location.href);
+                   // url.searchParams.delete('event');
+                   // window.history.replaceState({}, '', url.toString());
                }
+          }
+
+          // Handle authenticated user flow
+          if (token && storedUserId) {
+              console.log('loadInitialData: Found authentication tokens, attempting to authenticate');
+              try {
+                  const savedUserStr = localStorage.getItem('snapify_user_obj');
+                  if (savedUserStr) {
+                      currentUserFromStorage = JSON.parse(savedUserStr);
+                      console.log('loadInitialData: Loaded user from storage', { userId: currentUserFromStorage.id, role: currentUserFromStorage.role });
+                      setCurrentUser(currentUserFromStorage);
+                  }
+                  const eventsData = await api.fetchEvents();
+                  console.log('loadInitialData: Fetched events data', eventsData.length);
+                  setEvents(prevEvents => {
+                      // Merge with existing events, avoiding duplicates
+                      const merged = [...prevEvents];
+                      eventsData.forEach(event => {
+                          if (!merged.find(e => e.id === event.id)) {
+                              merged.push(event);
+                          }
+                      });
+                      return merged;
+                  });
+
+                  if (currentUserFromStorage?.role === 'ADMIN') {
+                      // FIXED: Safe users fetching with validation
+                      try {
+                          const usersData = await api.fetchUsers();
+                          // FIXED: Validate users array to prevent filter/map errors
+                          const validatedUsers = Array.isArray(usersData) ? usersData.map(u => ({
+                              ...u,
+                              role: u.role || 'USER',
+                              tier: u.tier || 'FREE',
+                              storageUsedMb: u.storageUsedMb || 0,
+                              storageLimitMb: u.storageLimitMb || 100
+                          })) : [];
+                          setAllUsers(validatedUsers);
+                      } catch (usersError) {
+                          console.warn('Failed to fetch users data:', usersError);
+                          setAllUsers([]); // Fallback to empty array
+                      }
+                  }
+
+                  // FIX: If we have a shared event loaded, stay on event view for authenticated users
+                  // This prevents QR code scanning from requiring re-authentication
+                  if (sharedEventId && currentEventId) {
+                      setView('event');
+                  } else {
+                      const targetView = currentUserFromStorage.role === 'ADMIN' ? 'admin' : 'dashboard';
+                      setView(targetView);
+                  }
+              } catch (e) {
+                  console.warn("Session expired or invalid", e);
+                  handleLogout();
+                  currentUserFromStorage = null;
+                  setView('landing');
+              }
           } else {
-              if (currentUserFromStorage) {
-                  setView(currentUserFromStorage.role === UserRole.ADMIN ? 'admin' : 'dashboard');
+              // CRITICAL FIX: For guests, if there's ANY shared event ID in URL, force event view
+              console.log("🎯 GUEST USER - sharedEventId:", sharedEventId, "currentEventId:", currentEventId);
+              if (sharedEventId) {
+                  console.log("🎉 GUEST ACCESS GRANTED - Setting view to event");
+                  setCurrentEventId(sharedEventId);
+                  setView('event');
               } else {
+                  console.log("No shared event for guest, going to landing");
                   setView('landing');
               }
           }
@@ -236,6 +381,35 @@ export default function App() {
           setView('landing');
       }
   };
+
+  // Handle QR code deep linking and URL parameter changes
+  useEffect(() => {
+    const handleUrlChange = () => {
+      const params = new URLSearchParams(window.location.search);
+      const eventId = params.get('event');
+      if (eventId && eventId !== currentEventId) {
+        console.log("URL changed with event parameter:", eventId);
+        // Load the event if it's different from current
+        api.fetchEventById(eventId).then(event => {
+          if (event) {
+            setEvents(prev => prev.some(e => e.id === eventId) ? prev : [...prev, event]);
+            setCurrentEventId(eventId);
+            setView('event');
+            incrementEventViews(eventId, [event]);
+          }
+        }).catch(error => {
+          console.error("Failed to load event from URL change:", error);
+        });
+      }
+    };
+
+    // Listen for popstate events (browser back/forward)
+    window.addEventListener('popstate', handleUrlChange);
+
+    return () => {
+      window.removeEventListener('popstate', handleUrlChange);
+    };
+  }, [currentEventId]);
 
   useEffect(() => {
     loadInitialData();
@@ -322,9 +496,48 @@ export default function App() {
                        setView('dashboard');
                    }
                }
-          } else if (user.role === UserRole.ADMIN) {
-              api.fetchUsers().then(setAllUsers);
-              setView('admin');
+          } else if (user.role === 'ADMIN') {
+              // FIXED: Validate admin user data to prevent array operation errors
+              const validatedUser = {
+                  ...user,
+                  role: user.role || 'ADMIN',
+                  tier: user.tier || 'STUDIO',
+                  storageUsedMb: user.storageUsedMb || 0,
+                  storageLimitMb: user.storageLimitMb || -1, // Unlimited for admin
+                  joinedDate: user.joinedDate || new Date().toISOString().split('T')[0]
+              };
+
+              setCurrentUser(validatedUser);
+              localStorage.setItem('snapify_token', token);
+              localStorage.setItem('snapify_user_id', validatedUser.id);
+              localStorage.setItem('snapify_user_obj', JSON.stringify(validatedUser));
+
+              try {
+                  const eventsData = await api.fetchEvents();
+                  setEvents(eventsData);
+
+                  // FIXED: Safe users fetching with error handling
+                  try {
+                      const usersData = await api.fetchUsers();
+                      // FIXED: Validate users array to prevent filter/map errors
+                      const validatedUsers = Array.isArray(usersData) ? usersData.map(u => ({
+                          ...u,
+                          role: u.role || 'USER',
+                          tier: u.tier || 'FREE',
+                          storageUsedMb: u.storageUsedMb || 0,
+                          storageLimitMb: u.storageLimitMb || 100
+                      })) : [];
+                      setAllUsers(validatedUsers);
+                  } catch (usersError) {
+                      console.warn('Failed to fetch users data:', usersError);
+                      setAllUsers([]); // Fallback to empty array
+                  }
+
+                  setView('admin');
+              } catch (error) {
+                  console.error('Error during admin login:', error);
+                  setView('dashboard'); // Fallback to regular dashboard
+              }
           } else {
               setView('dashboard');
           }
@@ -335,13 +548,25 @@ export default function App() {
   };
 
   const incrementEventViews = async (id: string, currentEvents: Event[]) => {
-      const updated = currentEvents.map(e => {
-          if (e.id === id) return { ...e, views: (e.views || 0) + 1 };
-          return e;
-      });
-      setEvents(updated);
+    const updated = currentEvents.map(e => {
+      if (e.id === id) return { ...e, views: (e.views || 0) + 1 };
+      return e;
+    });
+    setEvents(updated);
+
+    // Only update server view count if user is authenticated
+    // Guests can see local view count but it won't persist
+    if (currentUser) {
       const evt = currentEvents.find(e => e.id === id);
-      if (evt) await api.updateEvent({ ...evt, views: (evt.views || 0) + 1 });
+      if (evt) {
+        try {
+          await api.updateEvent({ ...evt, views: (evt.views || 0) + 1 });
+        } catch (error) {
+          console.warn('Failed to update event views (guest user):', error);
+          // Don't show error to user - view counting is not critical
+        }
+      }
+    }
   };
 
   useEffect(() => { localStorage.setItem('snapify_lang', language); }, [language]);
@@ -411,7 +636,7 @@ export default function App() {
     setGuestName(name);
     safeSetItem('snapify_guest_name', name);
     setShowGuestLogin(false);
-    
+
     if (currentEventId) setView('event');
 
     // UPDATED: Handle camera vs upload pending actions
@@ -537,12 +762,46 @@ export default function App() {
   };
 
   const initiateMediaAction = (action: 'upload' | 'camera') => {
+    console.log('initiateMediaAction called:', { action, hasCurrentUser: !!currentUser, currentUserRole: currentUser?.role, guestName, isMobile: isMobileDevice() });
+
     setLastUsedInput(action); // Keep track for retakes
     if (currentUser || guestName) {
-      // UPDATED: If camera action, trigger the camera-specific input
-      if (action === 'camera') cameraInputRef.current?.click();
-      else fileInputRef.current?.click();
+      console.log('Proceeding with upload for authenticated user or guest');
+
+      // CRITICAL FIX: On mobile, programmatic click() doesn't work
+      // We need to use a different approach for mobile devices
+      if (isMobileDevice()) {
+        console.log('Mobile device detected, using mobile-specific upload flow');
+
+        if (action === 'camera') {
+          // For mobile camera, we need to show a permission dialog first
+          // Then let the user manually trigger the camera
+          setPendingAction('camera');
+          setShowGuestLogin(true); // Reuse this modal to get user gesture
+        } else {
+          // For file upload on mobile, same issue
+          setPendingAction('upload');
+          setShowGuestLogin(true); // This will trigger the file picker
+        }
+        return;
+      }
+
+      // Desktop flow (works fine)
+      if (action === 'camera') {
+        // Check if we're in a secure context (required for camera access)
+        if (!window.isSecureContext && !window.location.href.startsWith('https://')) {
+          alert('Camera access requires HTTPS. Please use the secure version of the app.');
+          return;
+        }
+
+        // Desktop: directly trigger camera input
+        cameraInputRef.current?.click();
+      } else {
+        // File upload - trigger immediately
+        fileInputRef.current?.click();
+      }
     } else {
+      console.log('No authentication found, showing guest login modal');
       setPendingAction(action);
       setShowGuestLogin(true);
     }
@@ -561,7 +820,9 @@ export default function App() {
   const confirmUpload = async (userCaption: string, userPrivacy: 'public' | 'private') => {
     if (!activeEvent || !previewMedia) return;
     setIsUploading(true);
-    setUploadProgress(0); 
+    setUploadProgress(0);
+
+    console.log('🚀 Starting upload process:', { userCaption, userPrivacy, guestName, currentUser: !!currentUser });
 
     try {
         const { type, src, file } = previewMedia;
@@ -594,7 +855,8 @@ export default function App() {
         }
         
         let finalCaption = userCaption;
-        if (!finalCaption && type === 'image') {
+        if (!finalCaption && type === 'image' && currentUser) {
+             // Only generate AI captions for authenticated users
              finalCaption = await api.generateImageCaption(src);
         }
         const config = currentUser ? getTierConfigForUser(currentUser) : TIER_CONFIG[TierLevel.FREE];
@@ -624,10 +886,14 @@ export default function App() {
             privacy: userPrivacy
         };
 
+        console.log('📤 Upload metadata prepared:', { metadata, hasFile: !!uploadFile, eventId: activeEvent.id });
+
         if (uploadFile) {
+            console.log('📤 Starting API upload call...');
             await api.uploadMedia(uploadFile, metadata, activeEvent.id, (percent) => {
                 setUploadProgress(percent);
             });
+            console.log('✅ API upload completed successfully');
         }
         if (currentUser) {
             updateUserStorage(currentUser.id, fileSizeMb);
@@ -637,7 +903,12 @@ export default function App() {
         if (fileInputRef.current) fileInputRef.current.value = '';
         if (cameraInputRef.current) cameraInputRef.current.value = '';
     } catch (e) {
-        console.error("Upload failed", e);
+        console.error("❌ Upload failed with error:", e);
+        console.error("❌ Error details:", {
+            message: e.message,
+            stack: e.stack,
+            name: e.name
+        });
         alert("Upload failed. Please try again.");
     } finally {
         setIsUploading(false);
@@ -721,7 +992,7 @@ export default function App() {
              url.searchParams.delete('event');
              window.history.replaceState({}, '', url.toString());
           }
-          setView(currentUser ? (currentUser.role === UserRole.ADMIN ? 'admin' : 'dashboard') : 'landing');
+          setView(currentUser ? (currentUser.role === 'ADMIN' ? 'admin' : 'dashboard') : 'landing');
       } else if (view === 'dashboard' || view === 'admin') {
           handleLogout();
       }
@@ -749,14 +1020,15 @@ export default function App() {
   };
 
   return (
-    <div className="h-[100dvh] w-full flex flex-col bg-slate-50">
+    <ErrorBoundary>
+      <div className="h-[100dvh] w-full flex flex-col bg-slate-50">
       <OfflineBanner t={t} />
       <ShareTargetHandler onShareReceive={handleIncomingShare} />
       <ReloadPrompt />
 
       {view !== 'landing' && (
         <div className="flex-shrink-0 z-50 w-full bg-slate-50/95 backdrop-blur-md border-b border-slate-200">
-             <Navigation 
+             <Navigation
                 currentUser={currentUser}
                 guestName={guestName}
                 view={view}
@@ -764,10 +1036,10 @@ export default function App() {
                 language={language}
                 onChangeLanguage={changeLanguage}
                 onLogout={handleLogout}
-                onSignIn={handleSignInRequest} 
+                onSignIn={handleSignInRequest}
                 onHome={() => {
                   setCurrentEventId(null);
-                  if (currentUser) setView(currentUser.role === UserRole.ADMIN ? 'admin' : 'dashboard');
+                  if (currentUser) setView(currentUser.role === 'ADMIN' ? 'admin' : 'dashboard');
                   else setView('landing');
                 }}
                 onBack={handleBack}
@@ -780,8 +1052,8 @@ export default function App() {
       
       <div className="flex-1 overflow-y-auto overflow-x-hidden scroll-smooth w-full relative no-scrollbar">
           {view === 'landing' ? (
-            <div className="min-h-full w-full">
-              <LandingPage 
+            <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-slate-50"><div className="animate-pulse text-slate-500">Loading...</div></div>}>
+              <LandingView
                 onGoogleLogin={() => { if (window.google) window.google.accounts.id.prompt(); }}
                 onEmailAuth={handleEmailAuth}
                 onContactSales={() => setShowContactModal(true)}
@@ -790,45 +1062,40 @@ export default function App() {
                 language={language}
                 onChangeLanguage={changeLanguage}
                 t={t}
+                showContactModal={showContactModal}
+                onCloseContactModal={() => setShowContactModal(false)}
               />
-              <PWAInstallPrompt t={t} />
-              {showContactModal && <ContactModal onClose={() => setShowContactModal(false)} t={t} />}
-            </div>
+            </Suspense>
           ) : (
              <div className="flex flex-col min-h-full">
-                 <div className="flex-1 pb-32"> 
-                    {view === 'admin' && currentUser?.role === UserRole.ADMIN && (
-                         <AdminDashboard 
-                            users={allUsers}
-                            events={events}
-                            onClose={() => setView('dashboard')}
-                            onLogout={handleLogout}
-                            onDeleteUser={async (id) => { await api.deleteUser(id); setAllUsers(prev => prev.filter(u => u.id !== id)); }}
-                            onDeleteEvent={handleDeleteEvent}
-                            onDeleteMedia={handleDeleteMedia}
-                            onUpdateEvent={handleUpdateEvent}
-                            onUpdateUser={handleUpdateUser}
-                            onNewEvent={() => setShowCreateModal(true)}
-                            onDownloadEvent={downloadEventZip}
-                            t={t}
-                         />
-                    )}
-
-                    {view === 'dashboard' && currentUser && (
-                        <UserDashboard 
-                          events={events}
+                 <div className="flex-1 pb-32">
+                    {(view === 'admin' || view === 'dashboard') && (
+                        <DashboardView
+                          view={view as 'admin' | 'dashboard'}
                           currentUser={currentUser}
+                          allUsers={allUsers}
+                          events={events}
+                          onClose={() => setView('dashboard')}
+                          onLogout={handleLogout}
+                          onDeleteUser={async (id) => { await api.deleteUser(id); setAllUsers(prev => prev.filter(u => u.id !== id)); }}
+                          onDeleteEvent={handleDeleteEvent}
+                          onDeleteMedia={handleDeleteMedia}
+                          onUpdateEvent={handleUpdateEvent}
+                          onUpdateUser={handleUpdateUser}
                           onNewEvent={() => setShowCreateModal(true)}
+                          onDownloadEvent={downloadEventZip}
                           onSelectEvent={(id) => { setCurrentEventId(id); setView('event'); }}
                           onRequestUpgrade={() => setShowContactModal(true)}
                           t={t}
                         />
                     )}
 
-                    {view === 'event' && activeEvent && (
-                        <EventGallery 
-                          key={activeEvent.id} 
-                          event={activeEvent}
+                    {(view === 'event' || view === 'live') && (
+                      <Suspense fallback={<EventSkeleton />}>
+                        {console.log('Rendering EventView:', { view, hasActiveEvent: !!activeEvent, activeEventTitle: activeEvent?.title, currentUser: !!currentUser, guestName })}
+                        <EventView
+                          view={view as 'event' | 'live'}
+                          activeEvent={activeEvent}
                           currentUser={currentUser}
                           hostUser={hostUser}
                           isEventExpired={isEventExpired}
@@ -837,26 +1104,18 @@ export default function App() {
                           downloadingZip={downloadingZip}
                           applyWatermark={applyWatermarkState}
                           setApplyWatermark={setApplyWatermarkState}
-                          onDownloadAll={(media) => downloadEventZip({ ...activeEvent, media: media || activeEvent.media })}
+                          onDownloadAll={(media) => downloadEventZip({ ...activeEvent!, media: media || activeEvent!.media })}
                           onSetCover={handleSetCoverImage}
                           onUpload={initiateMediaAction}
                           onLike={handleLikeMedia}
                           onOpenLiveSlideshow={() => setView('live')}
+                          onCloseLiveSlideshow={() => setView('event')}
                           t={t}
                         />
+                      </Suspense>
                     )}
                  </div>
              </div>
-          )}
-          
-          {view === 'live' && activeEvent && (
-                <LiveSlideshow 
-                  event={activeEvent}
-                  currentUser={currentUser}
-                  hostUser={hostUser}
-                  onClose={() => setView('event')}
-                  t={t}
-                />
           )}
       </div>
 
@@ -914,5 +1173,6 @@ export default function App() {
       {showCreateModal && currentUser && <CreateEventModal currentUser={currentUser} onClose={() => setShowCreateModal(false)} onCreate={handleCreateEvent} t={t} />}
       {showStudioSettings && currentUser && <StudioSettingsModal currentUser={currentUser} onClose={() => setShowStudioSettings(false)} onSave={handleUpdateStudioSettings} t={t} />}
     </div>
+    </ErrorBoundary>
   );
 }

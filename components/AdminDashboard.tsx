@@ -9,7 +9,7 @@ import {
   ResponsiveContainer 
 } from 'recharts';
 import { User, UserRole, TierLevel, Event, TranslateFn, MediaItem } from '../types';
-import { Trash2, HardDrive, Zap, Calendar, Image as ImageIcon, X, Clock, Eye, Plus, Edit, Save, Camera, Briefcase, AlertTriangle, ZoomIn, Download, Lock, ArrowLeft, LogOut, Mail, Building, ShieldAlert, Users, LayoutGrid, Settings, Crown, Star, RefreshCw } from 'lucide-react';
+import { Trash2, HardDrive, Zap, Calendar, Image as ImageIcon, X, Clock, Eye, Plus, Edit, Save, Camera, Briefcase, AlertTriangle, ZoomIn, Download, Lock, ArrowLeft, LogOut, Mail, Building, ShieldAlert, ShieldCheck, Users, LayoutGrid, Settings, Crown, Star, RefreshCw } from 'lucide-react';
 import { api } from '../services/api';
 // @ts-ignore
 import { useRegisterSW } from 'virtual:pwa-register/react';
@@ -30,7 +30,7 @@ interface AdminDashboardProps {
   t: TranslateFn;
 }
 
-type Tab = 'users' | 'events' | 'userEvents' | 'settings';
+type Tab = 'users' | 'events' | 'userEvents' | 'analytics' | 'settings';
 
 interface DeleteConfirmationState {
   isOpen: boolean;
@@ -41,11 +41,11 @@ interface DeleteConfirmationState {
   message: string;
 }
 
-export const AdminDashboard: React.FC<AdminDashboardProps> = ({ 
-  users, 
-  events, 
-  onDeleteUser, 
-  onDeleteEvent, 
+export const AdminDashboard: React.FC<AdminDashboardProps> = ({
+  users,
+  events,
+  onDeleteUser,
+  onDeleteEvent,
   onDeleteMedia,
   onUpdateEvent,
   onUpdateUser,
@@ -55,6 +55,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onLogout,
   t
 }) => {
+  console.log('AdminDashboard render start', { usersCount: users?.length, eventsCount: events?.length });
+
   const [activeTab, setActiveTab] = useState<Tab>('users');
   
   // PWA Update Hook
@@ -66,6 +68,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
   const [selectedUserForEvents, setSelectedUserForEvents] = useState<User | null>(null);
   const [previewMedia, setPreviewMedia] = useState<MediaItem | null>(null);
+
+  // Bulk Operations State
+  const [selectedUsers, setSelectedUsers] = useState<Set<string>>(new Set());
+  const [bulkOperation, setBulkOperation] = useState<'delete' | 'changeTier' | null>(null);
+  const [bulkTierChange, setBulkTierChange] = useState<TierLevel>(TierLevel.FREE);
+  const [isBulkProcessing, setIsBulkProcessing] = useState(false);
   
   // Modal/Action State
   const [deleteConfirmation, setDeleteConfirmation] = useState<DeleteConfirmationState | null>(null);
@@ -86,11 +94,80 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [selectedTier, setSelectedTier] = useState<TierLevel>(TierLevel.FREE);
   const [selectedRole, setSelectedRole] = useState<UserRole>(UserRole.USER);
 
-  const storageData = users.map(u => ({
-    name: u.name.split(' ')[0],
-    used: u.storageUsedMb,
-    limit: u.storageLimitMb
-  }));
+  console.log('AdminDashboard processing data');
+
+  // Safe data processing with error handling
+  let storageData = [];
+  let totalMedia = 0;
+  let totalViews = 0;
+  let totalDownloads = 0;
+  let activeEvents = 0;
+  let expiredEvents = 0;
+  let tierDistribution = [];
+  let roleDistribution = [];
+  let eventActivityData = [];
+  let mediaTypeData = [];
+
+  try {
+    console.log('AdminDashboard processing data start');
+
+    // Storage data processing
+    storageData = users.map(u => ({
+      name: u?.name?.split(' ')[0] || 'User',
+      used: Math.max(0, u?.storageUsedMb || 0),
+      limit: Math.max(0, u?.storageLimitMb || 0)
+    })).filter(item => item.limit > 0);
+
+    console.log('AdminDashboard storageData processed', storageData);
+
+    // Analytics Data
+    totalMedia = events.reduce((acc, event) => acc + (event?.media?.length || 0), 0);
+    totalViews = events.reduce((acc, event) => acc + (event?.views || 0), 0);
+    totalDownloads = events.reduce((acc, event) => acc + (event?.downloads || 0), 0);
+    activeEvents = events.filter(e => !isExpired(e?.expiresAt)).length;
+    expiredEvents = events.filter(e => isExpired(e?.expiresAt)).length;
+
+    console.log('AdminDashboard analytics data processed', { totalMedia, totalViews, totalDownloads, activeEvents, expiredEvents });
+
+    // Safe tier and role distribution
+    const userLength = users.length || 1;
+    tierDistribution = Object.values(TierLevel).map(tier => ({
+      tier,
+      count: users.filter(u => u?.tier === tier).length,
+      percentage: Math.round((users.filter(u => u?.tier === tier).length / userLength) * 100)
+    }));
+
+    roleDistribution = Object.values(UserRole).map(role => ({
+      role,
+      count: users.filter(u => u?.role === role).length,
+      percentage: Math.round((users.filter(u => u?.role === role).length / userLength) * 100)
+    }));
+
+    eventActivityData = [
+      { name: 'Active', value: activeEvents, color: '#10b981' },
+      { name: 'Expired', value: expiredEvents, color: '#ef4444' }
+    ];
+
+    mediaTypeData = [
+      { name: 'Images', value: events.reduce((acc, e) => acc + (e?.media?.filter(m => m?.type === 'image').length || 0), 0), color: '#6366f1' },
+      { name: 'Videos', value: events.reduce((acc, e) => acc + (e?.media?.filter(m => m?.type === 'video').length || 0), 0), color: '#f59e0b' }
+    ];
+
+    console.log('AdminDashboard data processing completed successfully');
+  } catch (error) {
+    console.error('AdminDashboard data processing error:', error);
+    // Use fallback values
+    storageData = [];
+    totalMedia = 0;
+    totalViews = 0;
+    totalDownloads = 0;
+    activeEvents = 0;
+    expiredEvents = 0;
+    tierDistribution = [];
+    roleDistribution = [];
+    eventActivityData = [];
+    mediaTypeData = [];
+  }
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -337,6 +414,56 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       }
   };
 
+  // Bulk Operations
+  const toggleUserSelection = (userId: string) => {
+      const newSelected = new Set(selectedUsers);
+      if (newSelected.has(userId)) {
+          newSelected.delete(userId);
+      } else {
+          newSelected.add(userId);
+      }
+      setSelectedUsers(newSelected);
+  };
+
+  const selectAllUsers = () => {
+      if (selectedUsers.size === users.length) {
+          setSelectedUsers(new Set());
+      } else {
+          setSelectedUsers(new Set(users.map(u => u.id)));
+      }
+  };
+
+  const executeBulkOperation = async () => {
+      if (selectedUsers.size === 0) return;
+
+      setIsBulkProcessing(true);
+      try {
+          if (bulkOperation === 'delete') {
+              const userIds = Array.from(selectedUsers);
+              for (const userId of userIds) {
+                  await onDeleteUser(userId);
+              }
+              alert(`Successfully deleted ${userIds.length} users.`);
+          } else if (bulkOperation === 'changeTier') {
+              const userIds = Array.from(selectedUsers);
+              for (const userId of userIds) {
+                  const user = users.find(u => u.id === userId);
+                  if (user) {
+                      const updatedUser = { ...user, tier: bulkTierChange };
+                      await onUpdateUser(updatedUser);
+                  }
+              }
+              alert(`Successfully updated ${userIds.length} users to ${bulkTierChange} tier.`);
+          }
+          setSelectedUsers(new Set());
+          setBulkOperation(null);
+      } catch (error) {
+          alert('Bulk operation failed. Please try again.');
+      } finally {
+          setIsBulkProcessing(false);
+      }
+  };
+
   const renderUserEvents = () => {
     if (!selectedUserForEvents) return null;
     const userEvents = getUserEvents(selectedUserForEvents.id);
@@ -426,6 +553,202 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     );
   };
 
+  const renderAnalytics = () => {
+      return (
+          <div className="space-y-8 animate-in fade-in duration-300">
+              {/* Overview Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                  <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col">
+                      <div className="flex items-center justify-between mb-4">
+                          <span className="text-sm font-bold text-slate-500 uppercase tracking-wider">Total Media</span>
+                          <div className="p-2 bg-purple-50 rounded-lg text-purple-600"><ImageIcon size={20} /></div>
+                      </div>
+                      <span className="text-4xl font-black text-slate-900">{totalMedia}</span>
+                      <span className="text-sm text-slate-500 mt-1">Across all events</span>
+                  </div>
+                  <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col">
+                      <div className="flex items-center justify-between mb-4">
+                          <span className="text-sm font-bold text-slate-500 uppercase tracking-wider">Total Views</span>
+                          <div className="p-2 bg-blue-50 rounded-lg text-blue-600"><Eye size={20} /></div>
+                      </div>
+                      <span className="text-4xl font-black text-slate-900">{totalViews.toLocaleString()}</span>
+                      <span className="text-sm text-slate-500 mt-1">Event gallery views</span>
+                  </div>
+                  <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col">
+                      <div className="flex items-center justify-between mb-4">
+                          <span className="text-sm font-bold text-slate-500 uppercase tracking-wider">Downloads</span>
+                          <div className="p-2 bg-green-50 rounded-lg text-green-600"><Download size={20} /></div>
+                      </div>
+                      <span className="text-4xl font-black text-slate-900">{totalDownloads.toLocaleString()}</span>
+                      <span className="text-sm text-slate-500 mt-1">ZIP downloads</span>
+                  </div>
+                  <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col">
+                      <div className="flex items-center justify-between mb-4">
+                          <span className="text-sm font-bold text-slate-500 uppercase tracking-wider">Active Events</span>
+                          <div className="p-2 bg-emerald-50 rounded-lg text-emerald-600"><Zap size={20} /></div>
+                      </div>
+                      <span className="text-4xl font-black text-slate-900">{activeEvents}</span>
+                      <span className="text-sm text-slate-500 mt-1">Currently accessible</span>
+                  </div>
+              </div>
+
+              {/* Charts Section */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                  {/* Event Status Chart */}
+                  <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                      <h3 className="text-lg font-bold text-slate-900 mb-6">Event Status Distribution</h3>
+                      <div className="space-y-4">
+                          {eventActivityData.map((item) => (
+                              <div key={item.name} className="flex items-center justify-between">
+                                  <div className="flex items-center gap-3">
+                                      <div className={`w-4 h-4 rounded-full`} style={{ backgroundColor: item.color }}></div>
+                                      <span className="font-medium text-slate-700">{item.name} Events</span>
+                                  </div>
+                                  <span className="font-bold text-slate-900">{item.value}</span>
+                              </div>
+                          ))}
+                      </div>
+                  </div>
+
+                  {/* Media Type Distribution */}
+                  <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                      <h3 className="text-lg font-bold text-slate-900 mb-6">Media Type Distribution</h3>
+                      <div className="space-y-4">
+                          {mediaTypeData.map((item) => (
+                              <div key={item.name} className="flex items-center justify-between">
+                                  <div className="flex items-center gap-3">
+                                      <div className={`w-4 h-4 rounded-full`} style={{ backgroundColor: item.color }}></div>
+                                      <span className="font-medium text-slate-700">{item.name}</span>
+                                  </div>
+                                  <span className="font-bold text-slate-900">{item.value}</span>
+                              </div>
+                          ))}
+                      </div>
+                  </div>
+              </div>
+
+              {/* User Analytics */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                  {/* Tier Distribution */}
+                  <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                      <h3 className="text-lg font-bold text-slate-900 mb-6">User Tier Distribution</h3>
+                      <div className="space-y-3">
+                          {tierDistribution.map((item) => (
+                              <div key={item.tier} className="flex items-center justify-between">
+                                  <span className="font-medium text-slate-700">{item.tier}</span>
+                                  <div className="flex items-center gap-3">
+                                      <div className="w-24 bg-slate-200 rounded-full h-2">
+                                          <div
+                                              className="bg-indigo-500 h-2 rounded-full transition-all duration-300"
+                                              style={{ width: `${item.percentage}%` }}
+                                          ></div>
+                                      </div>
+                                      <span className="font-bold text-slate-900 w-12 text-right">{item.percentage}%</span>
+                                  </div>
+                              </div>
+                          ))}
+                      </div>
+                  </div>
+
+                  {/* Role Distribution */}
+                  <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                      <h3 className="text-lg font-bold text-slate-900 mb-6">User Role Distribution</h3>
+                      <div className="space-y-3">
+                          {roleDistribution.map((item) => (
+                              <div key={item.role} className="flex items-center justify-between">
+                                  <span className="font-medium text-slate-700">{item.role}</span>
+                                  <div className="flex items-center gap-3">
+                                      <div className="w-24 bg-slate-200 rounded-full h-2">
+                                          <div
+                                              className="bg-purple-500 h-2 rounded-full transition-all duration-300"
+                                              style={{ width: `${item.percentage}%` }}
+                                          ></div>
+                                      </div>
+                                      <span className="font-bold text-slate-900 w-12 text-right">{item.percentage}%</span>
+                                  </div>
+                              </div>
+                          ))}
+                      </div>
+                  </div>
+              </div>
+
+              {/* Top Events Table */}
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                  <div className="p-6 border-b border-slate-100">
+                      <h3 className="text-lg font-bold text-slate-900">Top Performing Events</h3>
+                      <p className="text-sm text-slate-500 mt-1">Events ranked by total views</p>
+                  </div>
+                  <div className="overflow-x-auto">
+                      <table className="w-full">
+                          <thead className="bg-slate-50 border-b border-slate-200">
+                              <tr>
+                                  <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Event</th>
+                                  <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Host</th>
+                                  <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Views</th>
+                                  <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Downloads</th>
+                                  <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Media</th>
+                              </tr>
+                          </thead>
+                          <tbody className="bg-white divide-y divide-slate-100">
+                              {events
+                                  .sort((a, b) => (b.views || 0) - (a.views || 0))
+                                  .slice(0, 10)
+                                  .map((evt) => (
+                                  <tr key={evt.id} className="hover:bg-slate-50 transition-colors">
+                                      <td className="px-6 py-4 whitespace-nowrap">
+                                          <div className="text-sm font-bold text-slate-900">{evt.title}</div>
+                                          <div className="text-xs text-slate-500">{evt.date || 'No date'}</div>
+                                      </td>
+                                      <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-700">
+                                          {getEventHostName(evt.hostId)}
+                                      </td>
+                                      <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-slate-900">
+                                          {(evt.views || 0).toLocaleString()}
+                                      </td>
+                                      <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-slate-900">
+                                          {(evt.downloads || 0).toLocaleString()}
+                                      </td>
+                                      <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-slate-900">
+                                          {evt.media.length}
+                                      </td>
+                                  </tr>
+                              ))}
+                          </tbody>
+                      </table>
+                  </div>
+              </div>
+
+              {/* System Health */}
+              <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                  <h3 className="text-lg font-bold text-slate-900 mb-6">System Health</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      <div className="text-center">
+                          <div className="w-16 h-16 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-3 border border-green-100">
+                              <ShieldCheck className="text-green-600" size={24} />
+                          </div>
+                          <h4 className="font-bold text-slate-900">Server Status</h4>
+                          <p className="text-sm text-slate-500">Operational</p>
+                      </div>
+                      <div className="text-center">
+                          <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-3 border border-blue-100">
+                              <HardDrive className="text-blue-600" size={24} />
+                          </div>
+                          <h4 className="font-bold text-slate-900">Database</h4>
+                          <p className="text-sm text-slate-500">Connected</p>
+                      </div>
+                      <div className="text-center">
+                          <div className="w-16 h-16 bg-purple-50 rounded-full flex items-center justify-center mx-auto mb-3 border border-purple-100">
+                              <Zap className="text-purple-600" size={24} />
+                          </div>
+                          <h4 className="font-bold text-slate-900">Real-time</h4>
+                          <p className="text-sm text-slate-500">Active</p>
+                      </div>
+                  </div>
+              </div>
+          </div>
+      );
+  };
+
   const renderSettings = () => {
       return (
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden p-8 animate-in fade-in duration-300">
@@ -439,7 +762,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           Manage global configurations and perform critical maintenance tasks.
                       </p>
                   </div>
-                  
+
                   <div className="space-y-6">
                       {/* Force Update Card */}
                       <div className="border border-indigo-200 rounded-2xl p-6 bg-indigo-50/50 flex items-center justify-between">
@@ -451,7 +774,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                   Force this browser to fetch the latest version of the application immediately.
                               </p>
                           </div>
-                          <button 
+                          <button
                               onClick={handleForceUpdate}
                               className="py-2.5 px-5 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition-all shadow-md flex items-center gap-2"
                           >
@@ -470,7 +793,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                   Send a signal to <strong>ALL connected users</strong> to unregister their service worker and reload the page. Use this after deploying a new version to ensure everyone gets it immediately.
                               </p>
                           </div>
-                          <button 
+                          <button
                               onClick={handleGlobalClientReload}
                               className="py-2.5 px-5 bg-amber-600 text-white font-bold rounded-xl hover:bg-amber-700 transition-all shadow-md flex items-center gap-2"
                           >
@@ -489,11 +812,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                   <Trash2 size={20}/> Danger Zone
                               </h4>
                               <p className="text-sm text-red-700 mb-6 max-w-xl leading-relaxed">
-                                  Performs a hard reset of the entire SnapifY instance. This action will irreversibly delete 
-                                  <strong> ALL</strong> users, events, photos, videos, and comments from the database and clear 
-                                  all files from storage. 
+                                  Performs a hard reset of the entire SnapifY instance. This action will irreversibly delete
+                                  <strong> ALL</strong> users, events, photos, videos, and comments from the database and clear
+                                  all files from storage.
                               </p>
-                              <button 
+                              <button
                                   onClick={promptResetSystem}
                                   className="py-3 px-6 bg-red-600 text-white font-bold rounded-xl hover:bg-red-700 transition-all shadow-lg shadow-red-500/20 flex items-center gap-2"
                               >
@@ -507,6 +830,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
       );
   }
+
+  console.log('AdminDashboard about to render');
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
@@ -527,6 +852,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 {[
                     { id: 'users', icon: Users, label: 'Users' },
                     { id: 'events', icon: Calendar, label: 'Events' },
+                    { id: 'analytics', icon: BarChart, label: 'Analytics' },
                     { id: 'settings', icon: Settings, label: 'Settings' }
                 ].map(tab => (
                     <button
@@ -594,30 +920,88 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           )}
 
           {/* Content Switcher */}
-          {activeTab === 'settings' ? renderSettings() : 
-           activeTab === 'userEvents' ? renderUserEvents() : 
-           activeTab === 'users' ? (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* User List */}
-                <div className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
-                    <div className="p-6 border-b border-slate-100 flex justify-between items-center">
-                        <h3 className="text-lg font-bold text-slate-900">{t('registeredUsers')}</h3>
-                        <span className="bg-slate-100 text-slate-600 text-xs font-bold px-2.5 py-1 rounded-full">{users.length}</span>
-                    </div>
+           {activeTab === 'analytics' ? renderAnalytics() :
+            activeTab === 'settings' ? renderSettings() :
+            activeTab === 'userEvents' ? renderUserEvents() :
+            activeTab === 'users' ? (
+             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                 {/* User List */}
+                 <div className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+                     <div className="p-6 border-b border-slate-100 flex justify-between items-center">
+                         <h3 className="text-lg font-bold text-slate-900">{t('registeredUsers')}</h3>
+                         <span className="bg-slate-100 text-slate-600 text-xs font-bold px-2.5 py-1 rounded-full">{users.length}</span>
+                     </div>
+
+                     {/* Bulk Operations Bar */}
+                     {selectedUsers.size > 0 && (
+                         <div className="px-6 py-3 bg-indigo-50 border-b border-indigo-100 flex items-center justify-between">
+                             <span className="text-sm font-medium text-indigo-900">
+                                 {selectedUsers.size} user{selectedUsers.size > 1 ? 's' : ''} selected
+                             </span>
+                             <div className="flex items-center gap-2">
+                                 <select
+                                     value={bulkOperation || ''}
+                                     onChange={(e) => setBulkOperation(e.target.value as 'delete' | 'changeTier')}
+                                     className="px-3 py-1 text-sm border border-indigo-200 rounded-lg bg-white"
+                                 >
+                                     <option value="">Choose action...</option>
+                                     <option value="changeTier">Change Tier</option>
+                                     <option value="delete">Delete Users</option>
+                                 </select>
+
+                                 {bulkOperation === 'changeTier' && (
+                                     <select
+                                         value={bulkTierChange}
+                                         onChange={(e) => setBulkTierChange(e.target.value as TierLevel)}
+                                         className="px-3 py-1 text-sm border border-indigo-200 rounded-lg bg-white"
+                                     >
+                                         {Object.values(TierLevel).map(tier => (
+                                             <option key={tier} value={tier}>{tier}</option>
+                                         ))}
+                                     </select>
+                                 )}
+
+                                 <button
+                                     onClick={executeBulkOperation}
+                                     disabled={isBulkProcessing}
+                                     className="px-4 py-1 bg-indigo-600 text-white text-sm font-bold rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2"
+                                 >
+                                     {isBulkProcessing ? <RefreshCw size={14} className="animate-spin" /> : null}
+                                     Execute
+                                 </button>
+                             </div>
+                         </div>
+                     )}
                     <div className="overflow-x-auto flex-1">
                         <table className="w-full">
                         <thead className="bg-slate-50 border-b border-slate-200">
                             <tr>
-                            <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider pl-8">{t('users')}</th>
+                            <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">
+                                <input
+                                    type="checkbox"
+                                    checked={selectedUsers.size === users.length && users.length > 0}
+                                    onChange={selectAllUsers}
+                                    className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                />
+                            </th>
+                            <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">{t('users')}</th>
                             <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Stats</th>
                             <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">{t('tier')}</th>
-                            <th className="px-6 py-3 text-right text-xs font-bold text-slate-500 uppercase tracking-wider pr-8">{t('actions')}</th>
+                            <th className="px-6 py-3 text-right text-xs font-bold text-slate-500 uppercase tracking-wider">{t('actions')}</th>
                             </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-slate-100">
                             {users.map((user) => (
                             <tr key={user.id} className="hover:bg-slate-50 transition-colors group">
-                                <td className="px-6 py-4 pl-8 whitespace-nowrap">
+                                <td className="px-6 py-4 whitespace-nowrap">
+                                    <input
+                                        type="checkbox"
+                                        checked={selectedUsers.has(user.id)}
+                                        onChange={() => toggleUserSelection(user.id)}
+                                        className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                    />
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap">
                                 <div className="flex items-center">
                                     <div className={`flex-shrink-0 h-10 w-10 rounded-full flex items-center justify-center text-white font-bold shadow-sm ${user.role === UserRole.PHOTOGRAPHER ? 'bg-slate-900 border-2 border-amber-400' : 'bg-gradient-to-br from-indigo-500 to-purple-600'}`}>
                                         {user.role === UserRole.PHOTOGRAPHER ? <Camera size={16} className="text-amber-400"/> : user.name.charAt(0).toUpperCase()}
@@ -662,18 +1046,27 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col">
                     <h3 className="text-lg font-bold text-slate-900 mb-6">{t('storageUsage')}</h3>
                     <div className="flex-1 min-h-[300px]">
-                        <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={storageData} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                            <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" />
-                            <XAxis type="number" hide />
-                            <YAxis dataKey="name" type="category" width={80} tick={{fontSize: 12}} />
-                            <Tooltip 
-                                cursor={{fill: '#f8fafc'}} 
-                                contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }} 
-                            />
-                            <Bar dataKey="used" fill="#6366f1" radius={[0, 4, 4, 0]} barSize={20} name="Used (MB)" />
-                        </BarChart>
-                        </ResponsiveContainer>
+                        {storageData.length > 0 ? (
+                            <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={storageData} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" />
+                                    <XAxis type="number" hide />
+                                    <YAxis dataKey="name" type="category" width={80} tick={{fontSize: 12}} />
+                                    <Tooltip
+                                        cursor={{fill: '#f8fafc'}}
+                                        contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                                    />
+                                    <Bar dataKey="used" fill="#6366f1" radius={[0, 4, 4, 0]} barSize={20} name="Used (MB)" />
+                                </BarChart>
+                            </ResponsiveContainer>
+                        ) : (
+                            <div className="flex items-center justify-center h-full text-slate-500">
+                                <div className="text-center">
+                                    <HardDrive size={48} className="mx-auto mb-4 text-slate-300" />
+                                    <p className="font-medium">No storage data available</p>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>

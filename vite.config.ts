@@ -19,7 +19,6 @@ export default defineConfig({
         background_color: '#ffffff',
         display: 'standalone',
         orientation: 'portrait',
-        start_url: '/',
         icons: [
           {
             src: 'https://img.icons8.com/fluency/192/camera.png',
@@ -39,15 +38,19 @@ export default defineConfig({
           }
         ],
         share_target: {
-          action: "/",
-          method: "GET",
-          enctype: "application/x-www-form-urlencoded",
-          params: {
-            title: "title",
-            text: "text",
-            url: "url"
-          }
-        }
+            action: "/",
+            method: "GET",
+            enctype: "application/x-www-form-urlencoded",
+            params: {
+              title: "title",
+              text: "text",
+              url: "url"
+            }
+          },
+          // Add deep linking support for QR codes
+          scope: '/',
+          start_url: '/',
+          display_override: ['window-controls-overlay', 'standalone', 'minimal-ui']
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
