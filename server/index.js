@@ -16,6 +16,17 @@ import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } fro
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import jwt from 'jsonwebtoken';
 import sharp from 'sharp';
+
+// Helper function to extract EXIF orientation from image
+const getImageOrientation = async (filePath) => {
+    try {
+        const metadata = await sharp(filePath).metadata();
+        return metadata.orientation || 1; // Default to 1 (normal) if no orientation
+    } catch (error) {
+        console.warn('Failed to extract EXIF orientation:', error);
+        return 1; // Default orientation
+    }
+};
 import webpush from 'web-push'; 
 import bcrypt from 'bcrypt'; 
 import { OAuth2Client } from 'google-auth-library'; 
@@ -94,8 +105,11 @@ app.use(cors({
     origin: ALLOWED_ORIGINS,
     credentials: true
 }));
-app.use(bodyParser.json({ limit: '50mb' })); 
+app.use(bodyParser.json({ limit: '50mb' }));
 app.use(bodyParser.urlencoded({ extended: true }));
+
+// Serve static files from dist directory (production build)
+app.use(express.static(path.join(__dirname, '..', 'dist')));
 
 // --- SECURITY: Rate Limiters ---
 
@@ -276,6 +290,10 @@ db.serialize(async () => {
         if (!hasUploaderId) {
             db.run("ALTER TABLE media ADD COLUMN uploaderId TEXT");
         }
+        const hasOrientation = rows.some(row => row.name === 'orientation');
+        if (!hasOrientation) {
+            db.run("ALTER TABLE media ADD COLUMN orientation INTEGER DEFAULT 1");
+        }
     });
 
     db.run(`CREATE TABLE IF NOT EXISTS media (
@@ -293,6 +311,7 @@ db.serialize(async () => {
         likes INTEGER DEFAULT 0,
         privacy TEXT DEFAULT 'public',
         uploaderId TEXT,
+        orientation INTEGER DEFAULT 1,
         FOREIGN KEY(eventId) REFERENCES events(id) ON DELETE CASCADE
     )`);
     
@@ -411,7 +430,7 @@ app.get('/api/proxy-media', async (req, res) => {
         if (ContentType) res.setHeader('Content-Type', ContentType);
         res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
         
-        // @ts-ignore
+        // @ts-ignore - Body is a readable stream
         Body.pipe(res);
     } catch (e) {
         console.error("Proxy Error:", e);
@@ -433,6 +452,48 @@ async function attachPublicUrls(mediaList) {
 }
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok', uptime: process.uptime() }));
+
+app.get('/api/system/storage', authenticateToken, async (req, res) => {
+    if (req.user.role !== 'ADMIN') return res.status(403).json({ error: "Unauthorized" });
+
+    try {
+        // Get system disk usage
+        const { exec } = await import('child_process');
+        const { promisify } = await import('util');
+        const execAsync = promisify(exec);
+
+        const diskUsage = await execAsync('df -h / | tail -1');
+        const diskParts = diskUsage.stdout.trim().split(/\s+/);
+        const systemStorage = {
+            filesystem: diskParts[0],
+            size: diskParts[1],
+            used: diskParts[2],
+            available: diskParts[3],
+            usePercent: diskParts[4]
+        };
+
+        // Get MinIO data directory size (handle remote MinIO gracefully)
+        let minioData = { dataPath: 'Remote MinIO Server', size: 'N/A' };
+        try {
+            const minioDataPath = '/mnt/data'; // Local path if MinIO is running locally
+            const minioUsage = await execAsync(`du -sh ${minioDataPath}`);
+            const minioSize = minioUsage.stdout.trim().split('\t')[0];
+            minioData = { dataPath: minioDataPath, size: minioSize };
+        } catch (minioError) {
+            // MinIO data directory not accessible (likely remote server)
+            minioData = { dataPath: `${S3_ENDPOINT} (${S3_BUCKET})`, size: 'Remote' };
+        }
+
+        res.json({
+            system: systemStorage,
+            minio: minioData,
+            timestamp: new Date().toISOString()
+        });
+    } catch (error) {
+        console.error('Storage info error:', error);
+        res.status(500).json({ error: 'Failed to get storage info' });
+    }
+});
 
 app.post('/api/auth/login', async (req, res) => {
     const { email, password } = req.body;
@@ -597,11 +658,40 @@ app.get('/api/vendors', (req, res) => {
     });
 });
 
+app.get('/api/events/:id', optionalAuth, async (req, res) => {
+    const eventId = req.params.id;
+
+    db.get("SELECT events.*, users.tier as hostTier FROM events JOIN users ON events.hostId = users.id WHERE events.id = ?", [eventId], async (err, event) => {
+        if (err) return res.status(500).json({ error: err.message });
+        if (!event) return res.status(404).json({ error: "Event not found" });
+
+        // Check if event is expired
+        const isExpired = event.expiresAt && new Date() > new Date(event.expiresAt);
+
+        // Allow access to expired events only for hosts and admins
+        if (isExpired && !(req.user && (req.user.id === event.hostId || req.user.role === 'ADMIN'))) {
+            return res.status(410).json({ error: "Event has expired" });
+        }
+
+        try {
+            const media = await new Promise(resolve => db.all("SELECT * FROM media WHERE eventId = ? ORDER BY uploadedAt DESC", [eventId], (err, rows) => resolve(rows || [])));
+            const signedMedia = await attachPublicUrls(media);
+            let signedCover = event.coverImage;
+            if (event.coverImage && !event.coverImage.startsWith('http')) signedCover = getPublicUrl(event.coverImage);
+            const detailedEvent = { ...event, media: signedMedia, coverImage: signedCover, hasPin: !!event.pin };
+            res.json(detailedEvent);
+        } catch (e) {
+            res.status(500).json({ error: 'Failed to load event' });
+        }
+    });
+});
+
+
 app.get('/api/events', authenticateToken, (req, res) => {
     const callerId = req.user.id;
-    const query = req.user.role === 'ADMIN' 
+    const query = req.user.role === 'ADMIN'
         ? `SELECT events.*, users.tier as hostTier FROM events JOIN users ON events.hostId = users.id`
-        : `SELECT events.*, users.tier as hostTier FROM events JOIN users ON events.hostId = users.id WHERE events.hostId = ?`;
+        : `SELECT events.*, users.tier as hostTier FROM events JOIN users ON events.hostId = users.id WHERE events.hostId = ? AND (events.expiresAt IS NULL OR events.expiresAt > datetime('now'))`;
     const params = req.user.role === 'ADMIN' ? [] : [callerId];
 
     db.all(query, params, async (err, events) => {
@@ -648,9 +738,30 @@ app.delete('/api/events/:id', authenticateToken, (req, res) => {
     db.get("SELECT hostId FROM events WHERE id = ?", [req.params.id], (err, row) => {
         if (!row) return res.status(404).json({ error: "Not found" });
         if (row.hostId !== req.user.id && req.user.role !== 'ADMIN') return res.sendStatus(403);
-        db.run("DELETE FROM events WHERE id=?", req.params.id, (err) => {
+
+        // Clean up S3 files before deleting event
+        // 1. Get all media files for this event
+        db.all("SELECT url, previewUrl FROM media WHERE eventId = ?", [req.params.id], async (err, mediaRows) => {
             if (err) return res.status(500).json({ error: err.message });
-            res.json({ success: true });
+
+            // 2. Delete files from S3 storage
+            if (mediaRows && mediaRows.length > 0) {
+                const deletePromises = mediaRows.map(async (media) => {
+                    try {
+                        if (media.url) await s3Client.send(new DeleteObjectCommand({ Bucket: S3_BUCKET, Key: media.url }));
+                        if (media.previewUrl) await s3Client.send(new DeleteObjectCommand({ Bucket: S3_BUCKET, Key: media.previewUrl }));
+                    } catch (e) {
+                        console.warn(`Failed to delete S3 file: ${media.url || media.previewUrl}`, e);
+                    }
+                });
+                await Promise.all(deletePromises);
+            }
+
+            // 3. Delete event from database (CASCADE will handle related records)
+            db.run("DELETE FROM events WHERE id=?", req.params.id, (err) => {
+                if (err) return res.status(500).json({ error: err.message });
+                res.json({ success: true, deletedMediaCount: mediaRows ? mediaRows.length : 0 });
+            });
         });
     });
 });
@@ -666,49 +777,110 @@ app.post('/api/media', optionalAuth, upload.single('file'), async (req, res) => 
     const isVideo = body.type === 'video';
     const ext = path.extname(req.file.originalname);
     const s3Key = `events/${body.eventId}/${body.id}${ext}`;
-    const stmt = db.prepare(`INSERT INTO media (id, eventId, type, url, previewUrl, isProcessing, caption, uploadedAt, uploaderName, uploaderId, isWatermarked, watermarkText, likes, privacy) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+    const stmt = db.prepare(`INSERT INTO media (id, eventId, type, url, previewUrl, isProcessing, caption, uploadedAt, uploaderName, uploaderId, isWatermarked, watermarkText, likes, privacy, orientation) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
 
     if (!isVideo) {
         try {
+            // Extract EXIF orientation for proper image rotation
+            const orientation = await getImageOrientation(req.file.path);
+
             const previewFilename = `thumb_${path.parse(req.file.filename).name}.jpg`;
             const previewPath = path.join(uploadDir, previewFilename);
             const previewKey = `events/${body.eventId}/thumb_${body.id}.jpg`;
             await sharp(req.file.path).resize(400, 400, { fit: 'inside' }).jpeg({ quality: 80 }).toFile(previewPath);
             await Promise.all([uploadToS3(req.file.path, s3Key, req.file.mimetype), uploadToS3(previewPath, previewKey, 'image/jpeg')]);
             fs.unlink(previewPath, () => {});
-            stmt.run(body.id, body.eventId, body.type, s3Key, previewKey, 0, body.caption, body.uploadedAt, body.uploaderName, body.uploaderId, body.isWatermarked === 'true' ? 1 : 0, body.watermarkText, 0, body.privacy || 'public', (err) => {
-                const item = { id: body.id, eventId: body.eventId, url: getPublicUrl(s3Key), previewUrl: getPublicUrl(previewKey), type: body.type, caption: body.caption, isProcessing: false, uploadedAt: body.uploadedAt, uploaderName: body.uploaderName, likes: 0, comments: [], privacy: body.privacy || 'public' };
+            stmt.run(body.id, body.eventId, body.type, s3Key, previewKey, 0, body.caption, body.uploadedAt, body.uploaderName, body.uploaderId, body.isWatermarked === 'true' ? 1 : 0, body.watermarkText, 0, body.privacy || 'public', orientation, (err) => {
+                const item = { id: body.id, eventId: body.eventId, url: getPublicUrl(s3Key), previewUrl: getPublicUrl(previewKey), type: body.type, caption: body.caption, isProcessing: false, uploadedAt: body.uploadedAt, uploaderName: body.uploaderName, likes: 0, comments: [], privacy: body.privacy || 'public', orientation };
                 io.to(body.eventId).emit('media_uploaded', item);
                 res.json(item);
             });
             stmt.finalize();
         } catch (e) { res.status(500).json({ error: e.message }); }
     } else {
-        stmt.run(body.id, body.eventId, body.type, s3Key, '', 1, body.caption, body.uploadedAt, body.uploaderName, body.uploaderId, body.isWatermarked === 'true' ? 1 : 0, body.watermarkText, 0, body.privacy || 'public', (err) => {
-            const item = { id: body.id, eventId: body.eventId, url: '', type: body.type, caption: body.caption, isProcessing: true, uploadedAt: body.uploadedAt, uploaderName: body.uploaderName, likes: 0, comments: [], privacy: body.privacy || 'public' };
-            io.to(body.eventId).emit('media_uploaded', item);
-            res.json(item);
-            const processVideo = async () => {
-                const inputPath = req.file.path;
-                if (!inputPath.startsWith(uploadDir)) return;
-                const outputPath = path.join(uploadDir, `preview_${path.parse(req.file.filename).name}.mp4`);
-                const previewKey = `events/${body.eventId}/preview_${body.id}.mp4`;
-                const ffmpeg = spawn('ffmpeg', ['-i', inputPath, '-vf', 'scale=-2:720', '-c:v', 'libx264', '-crf', '23', '-preset', 'fast', '-c:a', 'aac', '-b:a', '128k', '-y', outputPath]);
-                ffmpeg.on('close', async (code) => {
-                    if (code === 0) {
-                        try {
-                            await Promise.all([uploadToS3(inputPath, s3Key, req.file.mimetype), uploadToS3(outputPath, previewKey, 'video/mp4')]);
-                            db.run("UPDATE media SET isProcessing = 0, previewUrl = ? WHERE id = ?", [previewKey, body.id], () => {
-                                io.to(body.eventId).emit('media_processed', { id: body.id, previewUrl: getPublicUrl(previewKey), url: getPublicUrl(s3Key) });
-                            });
-                        } catch (e) {}
-                    }
-                    if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);
+        // VIDEO DURATION VALIDATION: Check video length before processing
+        const checkVideoDuration = async (filePath) => {
+            return new Promise((resolve, reject) => {
+                const ffprobe = spawn('ffprobe', [
+                    '-v', 'quiet',
+                    '-print_format', 'json',
+                    '-show_format',
+                    '-show_streams',
+                    filePath
+                ]);
+
+                let output = '';
+                ffprobe.stdout.on('data', (data) => {
+                    output += data.toString();
                 });
-            };
-            processVideo().catch(console.error);
-        });
-        stmt.finalize();
+
+                ffprobe.on('close', (code) => {
+                    if (code !== 0) {
+                        reject(new Error('Failed to analyze video'));
+                        return;
+                    }
+
+                    try {
+                        const data = JSON.parse(output);
+                        const duration = parseFloat(data.format.duration);
+                        resolve(duration);
+                    } catch (e) {
+                        reject(new Error('Failed to parse video metadata'));
+                    }
+                });
+
+                ffprobe.on('error', (err) => {
+                    reject(err);
+                });
+            });
+        };
+
+        try {
+            const duration = await checkVideoDuration(req.file.path);
+            const maxDuration = 10; // 10 seconds limit for all tiers
+
+            if (duration > maxDuration) {
+                // Clean up uploaded file
+                if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+                return res.status(400).json({
+                    error: `Video too long. Maximum duration is ${maxDuration} seconds. Your video is ${duration.toFixed(1)} seconds.`
+                });
+            }
+
+            // Video is within limits, proceed with upload
+            stmt.run(body.id, body.eventId, body.type, s3Key, '', 1, body.caption, body.uploadedAt, body.uploaderName, body.uploaderId, body.isWatermarked === 'true' ? 1 : 0, body.watermarkText, 0, body.privacy || 'public', (err) => {
+                const item = { id: body.id, eventId: body.eventId, url: '', type: body.type, caption: body.caption, isProcessing: true, uploadedAt: body.uploadedAt, uploaderName: body.uploaderName, likes: 0, comments: [], privacy: body.privacy || 'public' };
+                io.to(body.eventId).emit('media_uploaded', item);
+                res.json(item);
+                const processVideo = async () => {
+                    const inputPath = req.file.path;
+                    if (!inputPath.startsWith(uploadDir)) return;
+                    const outputPath = path.join(uploadDir, `preview_${path.parse(req.file.filename).name}.mp4`);
+                    const previewKey = `events/${body.eventId}/preview_${body.id}.mp4`;
+                    const ffmpeg = spawn('ffmpeg', ['-i', inputPath, '-vf', 'scale=-2:720', '-c:v', 'libx264', '-crf', '23', '-preset', 'fast', '-c:a', 'aac', '-b:a', '128k', '-y', outputPath]);
+                    ffmpeg.on('close', async (code) => {
+                        if (code === 0) {
+                            try {
+                                await Promise.all([uploadToS3(inputPath, s3Key, req.file.mimetype), uploadToS3(outputPath, previewKey, 'video/mp4')]);
+                                db.run("UPDATE media SET isProcessing = 0, previewUrl = ? WHERE id = ?", [previewKey, body.id], () => {
+                                    io.to(body.eventId).emit('media_processed', { id: body.id, previewUrl: getPublicUrl(previewKey), url: getPublicUrl(s3Key) });
+                                });
+                            } catch (e) {}
+                        }
+                        if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);
+                    });
+                };
+                processVideo().catch(console.error);
+            });
+            stmt.finalize();
+        } catch (durationError) {
+            console.error('Video duration check failed:', durationError);
+            // Clean up uploaded file
+            if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+            return res.status(400).json({
+                error: 'Unable to validate video duration. Please try again or contact support.'
+            });
+        }
     }
 });
 
@@ -847,6 +1019,17 @@ app.delete('/api/users/:id', authenticateToken, (req, res) => {
             res.json({ success: true });
         });
     });
+});
+
+// Catch-all handler: send back index.html for client-side routing
+// This must be the last route
+app.use((req, res) => {
+    // Only serve index.html for non-API routes
+    if (!req.path.startsWith('/api/')) {
+        res.sendFile(path.join(__dirname, '..', 'dist', 'index.html'));
+    } else {
+        res.status(404).json({ error: 'Not found' });
+    }
 });
 
 server.listen(PORT, () => {
