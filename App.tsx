@@ -26,7 +26,7 @@ const ReloadPrompt = lazy(() => import('./components/ReloadPrompt').then(module 
 const SupportChat = lazy(() => import('./components/SupportChat').then(module => ({ default: module.SupportChat })));
 
 // Keep lightweight utilities as direct imports
-import { applyWatermark, processImage, getExifOrientation } from './utils/imageProcessing';
+import { applyWatermark, processImage } from './utils/imageProcessing';
 import { clearDeviceFingerprint } from './utils/deviceFingerprint';
 import { socketService } from './services/socketService';
 import { validateGuestName, sanitizeInput, validateEmail, validatePassword, validateEventTitle, validateEventDescription } from './utils/validation';
@@ -39,16 +39,6 @@ const API_URL = import.meta.env.DEV ? (import.meta.env.VITE_API_URL || 'http://l
 
 // Using imported validation functions from utils/validation.ts
 
-// Helper function to convert EXIF orientation to degrees
-const getRotationFromExif = (orientation: number): number => {
-  switch (orientation) {
-    case 1: return 0;     // Normal
-    case 3: return 180;   // Upside down
-    case 6: return 90;    // 90° CW stored - need 90° CW correction
-    case 8: return -90;   // 90° CCW stored - need 90° CCW correction
-    default: return 0;
-  }
-};
 
 const safeSetItem = (key: string, value: string) => {
   try { localStorage.setItem(key, value); } catch (error) { console.warn('Failed to save to localStorage:', error); }
@@ -653,7 +643,7 @@ export default function App() {
         uploadFile = new File([blob], "capture.jpg", { type: "image/jpeg" });
       }
 
-      // Apply manual rotation only (temporarily disable EXIF correction)
+      // Apply manual rotation only (browser handles EXIF orientation automatically)
       if (type === 'image' && uploadFile && rotation !== 0) {
         const img = new Image();
         img.src = URL.createObjectURL(uploadFile);

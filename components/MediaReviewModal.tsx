@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, RotateCcw, Type, Send, Loader2, Lock, Globe, AlertCircle } from 'lucide-react';
 import { TranslateFn } from '../types';
-import { getExifOrientation } from '../utils/imageProcessing';
 
 interface MediaReviewModalProps {
   type: 'image' | 'video';
@@ -34,7 +33,8 @@ export const MediaReviewModal: React.FC<MediaReviewModalProps> = ({
   const imgRef = useRef<HTMLImageElement>(null);
 
   useEffect(() => {
-    // Temporarily disable EXIF correction to test if browser handles it correctly
+    // Browser/camera API already handles EXIF orientation correctly
+    // Only apply rotation if user manually adjusts in preview
     setRotation(0);
   }, [file, type]);
 
