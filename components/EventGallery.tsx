@@ -232,6 +232,19 @@ const EventGalleryComponent: React.FC<EventGalleryProps> = ({
         socketService.connect();
         socketService.joinEvent(event.id);
 
+        // Real-time media updates
+        socketService.on('media_uploaded', (newItem: MediaItem) => {
+            console.log('EventGallery: Received media_uploaded event', newItem);
+            setLocalMedia(prev => [newItem, ...prev]);
+        });
+
+        socketService.on('media_processed', (data: { id: string, previewUrl: string, url?: string }) => {
+            console.log('EventGallery: Received media_processed event', data);
+            setLocalMedia(prev => prev.map(item =>
+                item.id === data.id ? { ...item, isProcessing: false, previewUrl: data.previewUrl, url: data.url || item.url } : item
+            ));
+        });
+
         socketService.on('new_like', (data: { id: string, likes: number }) => {
             setLocalMedia(prev => prev.map(m =>
                 m.id === data.id ? { ...m, likes: data.likes } : m
