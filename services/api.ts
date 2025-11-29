@@ -2,6 +2,17 @@ import { User, Event, MediaItem, GuestbookEntry, Comment, Vendor } from '../type
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
+// Helper function to construct proxy URLs for HTTPS access
+const buildProxyUrl = (key: string): string => {
+    if (!key) return '';
+    // If it's already a proxy URL, return as-is
+    if (key.startsWith('/api/proxy-media') || key.startsWith('http')) {
+        return key;
+    }
+    // Otherwise, construct the proxy URL
+    return `${API_URL}/api/proxy-media?key=${encodeURIComponent(key)}`;
+};
+
 const getAuthHeaders = () => {
     const token = localStorage.getItem('snapify_token');
     return token ? { 'Authorization': `Bearer ${token}` } : {};
@@ -69,7 +80,12 @@ export const api = {
         const data = await res.json();
         return data.map((e: any) => ({
             ...e,
-            media: e.media.map((m: any) => ({ ...m, isWatermarked: !!m.isWatermarked }))
+            media: e.media.map((m: any) => ({
+                ...m,
+                url: buildProxyUrl(m.url),
+                previewUrl: m.previewUrl ? buildProxyUrl(m.previewUrl) : buildProxyUrl(m.url),
+                isWatermarked: !!m.isWatermarked
+            }))
         }));
     },
 
@@ -79,7 +95,12 @@ export const api = {
         const data = await res.json();
         return {
             ...data,
-            media: data.media.map((m: any) => ({ ...m, isWatermarked: !!m.isWatermarked }))
+            media: data.media.map((m: any) => ({
+                ...m,
+                url: buildProxyUrl(m.url),
+                previewUrl: m.previewUrl ? buildProxyUrl(m.previewUrl) : buildProxyUrl(m.url),
+                isWatermarked: !!m.isWatermarked
+            }))
         };
     },
 
@@ -191,7 +212,12 @@ export const api = {
     getMediaById: async (mediaId: string): Promise<MediaItem> => {
         const res = await fetch(`${API_URL}/api/media/${mediaId}`, { headers: { ...getAuthHeaders() } });
         if (!res.ok) throw new Error('Failed to fetch media item');
-        return res.json();
+        const data = await res.json();
+        return {
+            ...data,
+            url: buildProxyUrl(data.url),
+            previewUrl: data.previewUrl ? buildProxyUrl(data.previewUrl) : buildProxyUrl(data.url)
+        };
     },
 
     generateImageCaption: async (base64Image: string): Promise<string> => {

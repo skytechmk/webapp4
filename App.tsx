@@ -183,15 +183,31 @@ export default function App() {
 
     socketService.on('cache_invalidate', handleCacheInvalidate);
 
+    // Helper function to build proxy URLs
+    const buildProxyUrl = (key: string): string => {
+      if (!key) return '';
+      // If it's already a proxy URL, return as-is
+      if (key.startsWith('/api/proxy-media') || key.startsWith('http')) {
+        return key;
+      }
+      // Otherwise, construct the proxy URL
+      return `/api/proxy-media?key=${encodeURIComponent(key)}`;
+    };
+
     // MEDIA UPLOAD REAL-TIME UPDATES
     const handleMediaUploaded = (newItem: MediaItem) => {
       console.log('Media uploaded event received:', newItem);
       setEvents(prev => prev.map(event => {
         if (event.id === newItem.eventId) {
-          // Add new media item to the event
+          // Add new media item to the event with proper URLs
+          const processedItem = {
+            ...newItem,
+            url: buildProxyUrl(newItem.url),
+            previewUrl: newItem.previewUrl ? buildProxyUrl(newItem.previewUrl) : buildProxyUrl(newItem.url)
+          };
           return {
             ...event,
-            media: [newItem, ...event.media]
+            media: [processedItem, ...event.media]
           };
         }
         return event;
@@ -205,7 +221,12 @@ export default function App() {
           return {
             ...event,
             media: event.media.map(m =>
-              m.id === data.id ? { ...m, isProcessing: false, previewUrl: data.previewUrl, url: data.url || m.url } : m
+              m.id === data.id ? {
+                ...m,
+                isProcessing: false,
+                previewUrl: buildProxyUrl(data.previewUrl),
+                url: data.url ? buildProxyUrl(data.url) : m.url
+              } : m
             )
           };
         }
