@@ -82,6 +82,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [showNotifications, setShowNotifications] = useState(false);
   const [selectedNotification, setSelectedNotification] = useState<any>(null);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+
+  // Support Tab State
+  const [supportMessages, setSupportMessages] = useState<any[]>([]);
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  const [newReply, setNewReply] = useState('');
+  const [isReplying, setIsReplying] = useState(false);
   
   // Event Edit State
   const [editingEvent, setEditingEvent] = useState<Event | null>(null);
@@ -113,6 +119,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           const data = await api.getSystemStorage();
           setSystemStorage(data);
         } catch (error) {
+          console.error('Failed to fetch system storage data:', error);
           // Storage data fetch failed - continue silently
         } finally {
           setStorageLoading(false);
@@ -172,6 +179,39 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [showNotifications]);
+
+  // Load support messages when Support tab is active
+  useEffect(() => {
+    if (activeTab === 'support' && supportMessages.length === 0) {
+      const loadSupportMessages = async () => {
+        try {
+          const messages = await api.getSupportMessages();
+          setSupportMessages(messages);
+        } catch (error) {
+          // Support messages load failed - continue silently
+        }
+      };
+      loadSupportMessages();
+    }
+  }, [activeTab, supportMessages.length]);
+
+  // Listen for new support messages
+  useEffect(() => {
+    socketService.connect();
+    const handleNewSupportMessage = (message: any) => {
+      setSupportMessages(prev => {
+        const existing = prev.find(m => m.id === message.id);
+        if (existing) return prev;
+        return [...prev, message];
+      });
+    };
+
+    socketService.on('new_support_message', handleNewSupportMessage);
+
+    return () => {
+      socketService.off('new_support_message', handleNewSupportMessage);
+    };
+  }, []);
 
   // --- Helpers ---
   const getEventHostName = (hostId: string) => {
@@ -384,6 +424,34 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       }
   };
 
+  // Support helper functions
+  const sendReply = async () => {
+    if (!newReply.trim() || !selectedUserId || isReplying) return;
+
+    setIsReplying(true);
+    try {
+      await api.sendAdminReply(selectedUserId, newReply.trim());
+      setNewReply('');
+    } catch (error) {
+      // Reply send failed - continue silently
+    } finally {
+      setIsReplying(false);
+    }
+  };
+
+  const markAsRead = async (messageId: string) => {
+    try {
+      await api.markMessageAsRead(messageId);
+      setSupportMessages(prev =>
+        prev.map(msg =>
+          msg.id === messageId ? { ...msg, isRead: true } : msg
+        )
+      );
+    } catch (error) {
+      // Mark as read failed - continue silently
+    }
+  };
+
   const renderUserEvents = () => {
     if (!selectedUserForEvents) return null;
     const userEvents = getUserEvents(selectedUserForEvents.id);
@@ -474,41 +542,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   const renderSupport = () => {
-    const [supportMessages, setSupportMessages] = useState<any[]>([]);
-    const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
-    const [newReply, setNewReply] = useState('');
-    const [isReplying, setIsReplying] = useState(false);
-
-    // Load support messages on mount
-    useEffect(() => {
-      const loadSupportMessages = async () => {
-        try {
-          const messages = await api.getSupportMessages();
-          setSupportMessages(messages);
-        } catch (error) {
-          // Support messages load failed - continue silently
-        }
-      };
-      loadSupportMessages();
-    }, []);
-
-    // Listen for new support messages
-    useEffect(() => {
-      socketService.connect();
-      const handleNewSupportMessage = (message: any) => {
-        setSupportMessages(prev => {
-          const existing = prev.find(m => m.id === message.id);
-          if (existing) return prev;
-          return [...prev, message];
-        });
-      };
-
-      socketService.on('new_support_message', handleNewSupportMessage);
-
-      return () => {
-        socketService.off('new_support_message', handleNewSupportMessage);
-      };
-    }, []);
 
     // Group messages by user
     const conversations = supportMessages.reduce((acc: any, message: any) => {
@@ -537,32 +570,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
     const selectedConversation = selectedUserId ? conversations[selectedUserId] : null;
 
-    const sendReply = async () => {
-      if (!newReply.trim() || !selectedUserId || isReplying) return;
-
-      setIsReplying(true);
-      try {
-        await api.sendAdminReply(selectedUserId, newReply.trim());
-        setNewReply('');
-      } catch (error) {
-        // Reply send failed - continue silently
-      } finally {
-        setIsReplying(false);
-      }
-    };
-
-    const markAsRead = async (messageId: string) => {
-      try {
-        await api.markMessageAsRead(messageId);
-        setSupportMessages(prev =>
-          prev.map(msg =>
-            msg.id === messageId ? { ...msg, isRead: true } : msg
-          )
-        );
-      } catch (error) {
-        // Mark as read failed - continue silently
-      }
-    };
 
     return (
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
@@ -855,6 +862,120 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                   <p>Unable to load MinIO information</p>
                               </div>
                           )}
+                      </div>
+
+                      {/* System Lab Card */}
+                      <div className="border border-red-200 rounded-2xl p-6 bg-red-50/30">
+                          <div className="flex items-center gap-3 mb-6">
+                              <div className="w-12 h-12 bg-red-100 rounded-xl flex items-center justify-center border border-red-200">
+                                  <ShieldAlert className="text-red-600" size={24} />
+                              </div>
+                              <div>
+                                  <h4 className="text-xl font-black text-red-900">System Lab</h4>
+                                  <p className="text-sm text-red-700 font-medium">Danger Zone - Administrative Operations</p>
+                              </div>
+                          </div>
+
+                          <div className="space-y-4">
+                              {/* Clean MinIO Bucket */}
+                              <div className="bg-white p-4 rounded-xl border border-red-200">
+                                  <div className="flex items-center justify-between">
+                                      <div>
+                                          <h5 className="font-bold text-slate-900">Clean MinIO Storage Bucket</h5>
+                                          <p className="text-sm text-slate-600 mt-1">
+                                              Permanently delete all files and objects from the MinIO storage bucket.
+                                              This action cannot be undone.
+                                          </p>
+                                      </div>
+                                      <button
+                                          onClick={async () => {
+                                              const confirmed = confirm('🚨 CRITICAL WARNING 🚨\n\n' +
+                                                  'This will PERMANENTLY DELETE ALL FILES from the MinIO storage bucket!\n\n' +
+                                                  '• All user uploaded media will be lost\n' +
+                                                  '• Event galleries will become empty\n' +
+                                                  '• This action CANNOT be undone\n\n' +
+                                                  'Type "YES" to confirm:');
+
+                                              if (confirmed) {
+                                                  const secondConfirm = prompt('Type "YES" to confirm permanent deletion:');
+                                                  if (secondConfirm === 'YES') {
+                                                      try {
+                                                          const result = await api.cleanMinIOBucket();
+                                                          alert(`✅ Bucket cleaned successfully!\n\n` +
+                                                              `📁 Deleted: ${result.deletedCount} objects\n` +
+                                                              `💾 Freed: ${result.totalSize}\n\n` +
+                                                              `⚠️  All media files have been permanently removed.`);
+                                                          // Refresh storage data
+                                                          setSystemStorage(null);
+                                                      } catch (error) {
+                                                          console.error('Failed to clean bucket:', error);
+                                                          alert('❌ Failed to clean bucket. Check console for details.');
+                                                      }
+                                                  }
+                                              }
+                                          }}
+                                          className="px-4 py-2 bg-red-600 text-white text-sm font-bold rounded-lg hover:bg-red-700 transition-colors flex items-center gap-2 shadow-lg shadow-red-500/20"
+                                      >
+                                          <Trash2 size={16} />
+                                          Clean Bucket
+                                      </button>
+                                  </div>
+                              </div>
+
+                              {/* Clear Users Database */}
+                              <div className="bg-white p-4 rounded-xl border border-red-200">
+                                  <div className="flex items-center justify-between">
+                                      <div>
+                                          <h5 className="font-bold text-slate-900">Clear Users Database</h5>
+                                          <p className="text-sm text-slate-600 mt-1">
+                                              Reset the webapp by removing all users, events, media, and related data.
+                                              Admin account will be preserved.
+                                          </p>
+                                      </div>
+                                      <button
+                                          onClick={async () => {
+                                              const confirmed = confirm('🚨 CRITICAL WARNING 🚨\n\n' +
+                                                  'This will RESET THE ENTIRE WEBAPP!\n\n' +
+                                                  '• All user accounts will be deleted (except admin)\n' +
+                                                  '• All events and galleries will be removed\n' +
+                                                  '• All media files will be lost\n' +
+                                                  '• Support messages will be cleared\n\n' +
+                                                  'The webapp will return to a fresh state.\n\n' +
+                                                  'Type "RESET" to confirm:');
+
+                                              if (confirmed) {
+                                                  const secondConfirm = prompt('Type "RESET" to confirm complete webapp reset:');
+                                                  if (secondConfirm === 'RESET') {
+                                                      try {
+                                                          const result = await api.clearUsersDatabase();
+                                                          alert(`✅ Database cleared successfully!\n\n` +
+                                                              `👤 Admin preserved: ${result.adminPreserved}\n` +
+                                                              `🗑️  Total records deleted: ${result.totalDeleted}\n\n` +
+                                                              `⚠️  Webapp has been reset to fresh state.`);
+                                                          // Refresh the page to reload data
+                                                          window.location.reload();
+                                                      } catch (error) {
+                                                          console.error('Failed to clear database:', error);
+                                                          alert('❌ Failed to clear database. Check console for details.');
+                                                      }
+                                                  }
+                                              }
+                                          }}
+                                          className="px-4 py-2 bg-red-700 text-white text-sm font-bold rounded-lg hover:bg-red-800 transition-colors flex items-center gap-2 shadow-lg shadow-red-500/30"
+                                      >
+                                          <AlertTriangle size={16} />
+                                          Clear Database
+                                      </button>
+                                  </div>
+                              </div>
+                          </div>
+
+                          <div className="mt-4 p-3 bg-red-100 border border-red-200 rounded-lg">
+                              <p className="text-xs text-red-800 font-medium flex items-center gap-2">
+                                  <AlertTriangle size={14} />
+                                  These operations are irreversible. Use only when necessary for system maintenance or testing.
+                              </p>
+                          </div>
                       </div>
 
                       {/* Last Updated */}
