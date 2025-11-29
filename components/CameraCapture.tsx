@@ -62,12 +62,15 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onCapture, onClose
             </button>
 
             <input
+              id="camera-capture-input"
+              name="camera-capture"
               ref={fileInputRef}
               type="file"
               accept="image/*"
               className="hidden"
               onChange={handleFileUpload}
               capture="environment"
+              autoComplete="off"
             />
 
             <p className="text-white/50 text-sm mt-4 text-center">
@@ -77,8 +80,11 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onCapture, onClose
             <button
               onClick={() => {
                 const input = document.createElement('input');
+                input.id = 'gallery-select-input';
+                input.name = 'gallery-select';
                 input.type = 'file';
                 input.accept = 'image/*';
+                input.autocomplete = 'off';
                 input.onchange = (e) => handleFileUpload(e as any);
                 input.click();
               }}

@@ -80,17 +80,22 @@ class ApiGateway {
         // Public proxy endpoint
         this.app.get('/api/proxy-media', async (req, res) => {
             const { key } = req.query;
+            console.log('Proxy request for key:', key);
             if (!key || typeof key !== 'string') {
                 return res.status(400).send("Missing key");
             }
 
             try {
                 const { getS3Object } = await import('./storage.js');
+                console.log('Fetching S3 object for key:', key);
                 const { Body, ContentType } = await getS3Object(key);
+                console.log('S3 object fetched, ContentType:', ContentType);
                 if (ContentType) res.setHeader('Content-Type', ContentType);
                 res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
                 Body.pipe(res);
+                console.log('Piping S3 object to response');
             } catch (e) {
+                console.error('Proxy error for key:', key, e.message);
                 res.status(404).send("Not Found");
             }
         });

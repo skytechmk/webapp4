@@ -128,13 +128,16 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({ currentUser,
         <form onSubmit={handleSubmit} className="p-6 space-y-5">
           <div>
             <label className="block text-sm font-bold text-slate-700 mb-2">{t('eventTitle')}</label>
-            <input 
-              type="text" 
+            <input
+              id="event-title-input"
+              name="event-title"
+              type="text"
               required
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="e.g., Sarah's 30th Birthday"
               className="w-full px-4 py-3 rounded-xl border border-slate-300 bg-white text-slate-900 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 outline-none transition-all"
+              autoComplete="off"
             />
           </div>
 
@@ -144,13 +147,15 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({ currentUser,
                 <MapPin size={16} className="text-slate-400" /> {t('locationCity')}
             </label>
             <div className="relative">
-                <input 
+                <input
+                  id="event-city-input"
+                  name="event-city"
                   type="text"
                   value={city}
                   onChange={(e) => handleCitySearch(e.target.value)}
                   placeholder="Type to search city (e.g. Skopje)..."
                   className="w-full px-4 py-3 rounded-xl border border-slate-300 bg-white text-slate-900 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 outline-none transition-all"
-                  autoComplete="off"
+                  autoComplete="address-level2"
                 />
                 {isSearchingCity && (
                     <div className="absolute right-3 top-1/2 -translate-y-1/2">
@@ -225,12 +230,15 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({ currentUser,
                   
                   {adminExpirationType === 'custom' && (
                       <div className="flex gap-2 animate-in fade-in slide-in-from-top-2">
-                            <input 
+                            <input
+                              id="admin-duration-value-input"
+                              name="admin-duration-value"
                               type="number"
                               min="1"
                               value={adminDurationValue}
                               onChange={(e) => setAdminDurationValue(parseInt(e.target.value) || 0)}
                               className="w-1/3 px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white text-slate-900 focus:ring-2 focus:ring-amber-200 outline-none"
+                              autoComplete="off"
                             />
                             <select 
                               value={adminDurationUnit}
@@ -251,12 +259,15 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({ currentUser,
              <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
                 <Lock size={16} className="text-slate-400"/> {t('optionalPin')}
              </label>
-             <input 
+             <input
+                id="event-pin-input"
+                name="event-pin"
                 type="text"
                 value={pin}
                 onChange={(e) => setPin(e.target.value)}
                 placeholder={t('pinDesc')}
                 className="w-full px-4 py-3 rounded-xl border border-slate-300 bg-white text-slate-900 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 outline-none transition-all"
+                autoComplete="off"
              />
           </div>
 
@@ -278,11 +289,14 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({ currentUser,
             </div>
             
             {includeDate && (
-              <input 
-                type="date" 
+              <input
+                id="event-date-input"
+                name="event-date"
+                type="date"
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
                 className="w-full px-4 py-3 rounded-xl border border-slate-300 bg-white text-slate-900 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 outline-none transition-all animate-in fade-in slide-in-from-top-1"
+                autoComplete="bday"
               />
             )}
           </div>
@@ -302,11 +316,14 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({ currentUser,
                 {isGeneratingDesc ? t('generating') : t('autoGenerate')}
               </button>
             </div>
-            <textarea 
+            <textarea
+              id="event-description-textarea"
+              name="event-description"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder={t('aiPlaceholder')}
               className="w-full px-3 py-2 bg-white rounded-lg border border-indigo-200 text-sm focus:outline-none focus:border-indigo-400 h-24 resize-none text-slate-900"
+              autoComplete="off"
             />
           </div>
 

@@ -15,10 +15,11 @@ async function attachPublicUrls(mediaList) {
 
 export const getEvents = async (req, res) => {
     try {
-        const cacheKey = req.user.role === 'ADMIN' ? 'admin_events' : `user_events_${req.user.id}`;
+        const userId = req.user.role === 'ADMIN' ? 'admin' : req.user.id;
+        const cacheKey = `user_events:${userId}`;
 
         // Try to get from cache first
-        let events = await cacheService.getUserEvents(req.user.role === 'ADMIN' ? 'admin' : req.user.id);
+        let events = await cacheService.getUserEvents(userId);
 
         if (!events) {
             // Cache miss - fetch from database
@@ -39,7 +40,7 @@ export const getEvents = async (req, res) => {
 
             // Cache the results (5 minutes for user events, 2 minutes for admin)
             const ttl = req.user.role === 'ADMIN' ? 120 : 300;
-            await cacheService.setUserEvents(req.user.role === 'ADMIN' ? 'admin' : req.user.id, events, ttl);
+            await cacheService.setUserEvents(userId, events, ttl);
         } else {
             console.log(`✅ Cache hit for ${cacheKey}`);
         }

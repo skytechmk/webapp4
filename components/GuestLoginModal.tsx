@@ -43,11 +43,14 @@ export const GuestLoginModal: React.FC<GuestLoginModalProps> = ({ onLogin, onReg
                  <form onSubmit={handleSubmit} className="mt-2">
                     <div className="mb-4">
                          <input
+                            id="guest-name-input"
+                            name="guest-name"
                             type="text"
                             value={guestName}
                             onChange={(e) => setGuestName(e.target.value)}
                             placeholder={t('yourName')}
                             className="bg-white text-slate-900 w-full px-4 py-3.5 rounded-xl border border-indigo-200 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 outline-none transition-all font-medium"
+                            autoComplete="name"
                         />
                     </div>
                     <button

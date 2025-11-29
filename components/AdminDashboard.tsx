@@ -684,12 +684,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <div className="p-4 border-t border-slate-100 bg-white">
                   <div className="flex gap-2">
                     <input
+                      id="admin-reply-input"
+                      name="admin-reply"
                       type="text"
                       value={newReply}
                       onChange={(e) => setNewReply(e.target.value)}
                       onKeyPress={(e) => e.key === 'Enter' && sendReply()}
                       placeholder="Type your reply..."
                       className="flex-1 px-4 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                      autoComplete="off"
                     />
                     <button
                       onClick={sendReply}
@@ -1304,13 +1307,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <div className="space-y-4">
                         <div>
                             <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Display Name</label>
-                            <input type="text" value={editUserName} onChange={(e) => setEditUserName(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-900 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 outline-none transition-all font-medium" />
+                            <input id="edit-user-name-input" name="edit-user-name" type="text" value={editUserName} onChange={(e) => setEditUserName(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-900 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 outline-none transition-all font-medium" autoComplete="name" />
                         </div>
                         <div>
                             <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Email Address</label>
                             <div className="flex items-center px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-500">
                                 <Mail size={18} className="mr-3 text-slate-400" />
-                                <input type="text" value={editUserEmail} onChange={(e) => setEditUserEmail(e.target.value)} className="bg-transparent w-full focus:outline-none font-medium" />
+                                <input id="edit-user-email-input" name="edit-user-email" type="text" value={editUserEmail} onChange={(e) => setEditUserEmail(e.target.value)} className="bg-transparent w-full focus:outline-none font-medium" autoComplete="email" />
                             </div>
                         </div>
                         {TIER_CONFIG[selectedTier].allowBranding && (
@@ -1318,7 +1321,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Studio / Business</label>
                                 <div className="flex items-center px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-900">
                                     <Building size={18} className="mr-3 text-slate-400" />
-                                    <input type="text" value={editUserStudio} onChange={(e) => setEditUserStudio(e.target.value)} className="bg-transparent w-full focus:outline-none font-medium" placeholder="No studio name" />
+                                    <input id="edit-user-studio-input" name="edit-user-studio" type="text" value={editUserStudio} onChange={(e) => setEditUserStudio(e.target.value)} className="bg-transparent w-full focus:outline-none font-medium" placeholder="No studio name" autoComplete="organization" />
                                 </div>
                             </div>
                         )}
@@ -1359,7 +1362,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <div className="p-6 space-y-5">
                       <div>
                           <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">{t('eventTitle')}</label>
-                          <input type="text" value={editTitle} onChange={(e) => setEditTitle(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-900 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 outline-none transition-all font-medium" />
+                          <input id="edit-event-title-input" name="edit-event-title" type="text" value={editTitle} onChange={(e) => setEditTitle(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-900 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 outline-none transition-all font-medium" autoComplete="off" />
                       </div>
                       <div className="bg-amber-50 p-4 rounded-xl border border-amber-100">
                           <label className="block text-xs font-bold text-amber-800 uppercase tracking-wider mb-3 flex items-center"><Clock size={16} className="mr-2"/> {t('modifyExpiration')}</label>
@@ -1380,7 +1383,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           </div>
                           {editExpiryType === 'custom' && (
                               <div className="flex gap-2 animate-in fade-in slide-in-from-top-2">
-                                  <input type="number" min="1" value={editDurationVal} onChange={(e) => setEditDurationVal(parseInt(e.target.value) || 0)} className="w-1/3 px-4 py-3 border border-amber-200 rounded-xl text-sm font-bold text-slate-900 focus:ring-2 focus:ring-amber-500 outline-none" />
+                                  <input id="edit-duration-value-input" name="edit-duration-value" type="number" min="1" value={editDurationVal} onChange={(e) => setEditDurationVal(parseInt(e.target.value) || 0)} className="w-1/3 px-4 py-3 border border-amber-200 rounded-xl text-sm font-bold text-slate-900 focus:ring-2 focus:ring-amber-500 outline-none" autoComplete="off" />
                                   <select value={editDurationUnit} onChange={(e) => setEditDurationUnit(e.target.value as any)} className="flex-1 px-4 py-3 border border-amber-200 rounded-xl text-sm font-bold text-slate-900 focus:ring-2 focus:ring-amber-500 outline-none bg-white cursor-pointer">
                                       <option value="seconds">{t('seconds')}</option><option value="minutes">{t('minutes')}</option><option value="hours">{t('hours')}</option><option value="days">{t('days')}</option>
                                   </select>

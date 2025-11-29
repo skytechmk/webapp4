@@ -92,8 +92,9 @@ export const processFileUpload = async (file, metadata, userId = null) => {
             await updateStorageUsage(userId, file.size);
         }
 
-        // Invalidate event media cache
+        // Invalidate caches
         await cacheService.invalidateEventMedia(eventId);
+        await cacheService.invalidateUserEvents(userId);
 
         // Mark as completed
         uploadProgress.set(uploadId, { status: 'completed', progress: 100 });
@@ -123,9 +124,9 @@ export const processFileUpload = async (file, metadata, userId = null) => {
                         isProcessing: false
                     };
 
-                    // Emit to all clients in the event room
+                    // Emit to clients in the event room
                     io.to(eventId).emit('media_uploaded', formattedItem);
-                    console.log(`📡 Emitted media_uploaded event for ${uploadId} to event ${eventId}`);
+                    console.log(`📡 Emitted media_uploaded event for ${uploadId} to event room ${eventId}`);
                 }
             });
         }
@@ -238,7 +239,7 @@ const processImageUpload = async (file, s3Key, previewKey, eventId, uploadId) =>
                 previewUrl: previewKey,
                 url: s3Key
             });
-            console.log(`📡 Emitted media_processed event for ${uploadId} to event ${eventId}`);
+            console.log(`📡 Emitted media_processed event for ${uploadId} to event room ${eventId}`);
         }
 
     } catch (error) {
@@ -305,7 +306,7 @@ const processVideoUpload = async (file, s3Key, previewKey, eventId, uploadId) =>
                             previewUrl: previewKey,
                             url: s3Key
                         });
-                        console.log(`📡 Emitted media_processed event for video ${uploadId} to event ${eventId}`);
+                        console.log(`📡 Emitted media_processed event for video ${uploadId} to event room ${eventId}`);
                     }
 
                     // Notify completion

@@ -130,12 +130,15 @@ export const MediaReviewModal: React.FC<MediaReviewModalProps> = ({
             <div className="absolute left-3 top-1/2 -translate-y-1/2 text-white/50">
                 <Type size={16} />
             </div>
-            <input 
-                type="text" 
+            <input
+                id="media-caption-input"
+                name="media-caption"
+                type="text"
                 value={caption}
                 onChange={(e) => setCaption(e.target.value)}
                 placeholder={t('leaveMessage') || "Add a caption..."}
                 className="w-full bg-white/10 border border-white/20 rounded-xl py-3 pl-10 pr-4 text-white placeholder:text-white/30 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all"
+                autoComplete="off"
             />
         </div>
 

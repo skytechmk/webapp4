@@ -232,19 +232,6 @@ const EventGalleryComponent: React.FC<EventGalleryProps> = ({
         socketService.connect();
         socketService.joinEvent(event.id);
 
-        socketService.on('media_uploaded', (newItem: MediaItem) => {
-            setLocalMedia(prev => {
-                if (prev.some(m => m.id === newItem.id)) return prev;
-                return [newItem, ...prev];
-            });
-        });
-
-        socketService.on('media_processed', (data: { id: string, previewUrl: string, url?: string }) => {
-            setLocalMedia(prev => prev.map(m =>
-                m.id === data.id ? { ...m, isProcessing: false, previewUrl: data.previewUrl, url: data.url || m.url } : m
-            ));
-        });
-
         socketService.on('new_like', (data: { id: string, likes: number }) => {
             setLocalMedia(prev => prev.map(m =>
                 m.id === data.id ? { ...m, likes: data.likes } : m
@@ -275,8 +262,13 @@ const EventGalleryComponent: React.FC<EventGalleryProps> = ({
     }, [event.id]);
 
     useEffect(() => {
+        console.log('EventGallery: syncing localMedia with event.media:', event.media.length, 'items for event', event.id);
         setLocalMedia(event.media);
-    }, [event.media]);
+    }, [event.media, event.id]);
+
+    useEffect(() => {
+        setLocalGuestbook(event.guestbook || []);
+    }, [event.guestbook, event.id]);
 
     // Ensure admins/owners bypass lock immediately if context changes
     useEffect(() => {
@@ -345,6 +337,7 @@ const EventGalleryComponent: React.FC<EventGalleryProps> = ({
     // Memoize expensive displayMedia calculation
     const displayMedia = useMemo(() => {
         let media = filteredMedia || localMedia;
+        console.log('EventGallery: computing displayMedia from', media.length, 'items (filteredMedia:', !!filteredMedia, 'localMedia:', localMedia.length, ')');
 
         // Filter for Privacy
         if (!isOwner && currentUser?.role !== UserRole.ADMIN) {
@@ -364,6 +357,7 @@ const EventGalleryComponent: React.FC<EventGalleryProps> = ({
                 (item.uploaderName && item.uploaderName.toLowerCase().includes(q))
             );
         }
+        console.log('EventGallery: displayMedia computed to', media.length, 'items');
         return media;
     }, [filteredMedia, localMedia, isOwner, currentUser, showMyUploads, searchQuery]);
 
@@ -651,16 +645,14 @@ const EventGalleryComponent: React.FC<EventGalleryProps> = ({
                         // Updated Image Grid Item with Fallback
                         <div className="w-full aspect-square bg-slate-200 relative overflow-hidden">
                             <img
-                                src={mediaItem.previewUrl || mediaItem.url}
+                                src={mediaItem.url}
                                 alt={mediaItem.caption || 'Photo'}
                                 className="w-full h-full object-cover"
                                 style={{ transform: getOrientationTransform(mediaItem.orientation) }}
+                                loading="lazy"
                                 onError={(e) => {
-                                    console.error('Image failed to load:', mediaItem.previewUrl || mediaItem.url);
-                                    // Try fallback to full URL if preview fails
-                                    if (e.currentTarget.src === (mediaItem.previewUrl || mediaItem.url)) {
-                                        e.currentTarget.src = mediaItem.url;
-                                    }
+                                    console.error('Image failed to load:', mediaItem.url);
+                                    e.currentTarget.style.display = 'none';
                                 }}
                             />
                         </div>
@@ -713,7 +705,7 @@ const EventGalleryComponent: React.FC<EventGalleryProps> = ({
                     </div>
                     <h2 className="text-2xl font-bold text-slate-900 mb-2">{t('pinRequired')}</h2>
                     <form onSubmit={handleUnlock}>
-                        <input type="text" value={pinInput} onChange={(e) => { setPinInput(e.target.value); setPinError(''); }} placeholder="PIN Code" className="w-full text-center text-2xl tracking-widest font-bold p-3 rounded-xl border border-slate-300 mb-4 uppercase" maxLength={6} />
+                        <input id="event-pin-input" name="event-pin" type="text" value={pinInput} onChange={(e) => { setPinInput(e.target.value); setPinError(''); }} placeholder="PIN Code" className="w-full text-center text-2xl tracking-widest font-bold p-3 rounded-xl border border-slate-300 mb-4 uppercase" maxLength={6} autoComplete="off" />
                         {pinError && <p className="text-red-500 font-bold text-sm mb-4">{pinError}</p>}
                         <button type="submit" className="w-full bg-slate-900 text-white py-3 rounded-xl font-bold">{t('submitPin')}</button>
                     </form>
@@ -800,7 +792,7 @@ const EventGalleryComponent: React.FC<EventGalleryProps> = ({
                     <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
                         <div className="relative flex-1 max-w-md">
                             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" size={18} />
-                            <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search memories..." className="w-full pl-10 pr-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none text-sm" />
+                            <input id="search-memories-input" name="search-memories" type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search memories..." className="w-full pl-10 pr-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none text-sm" autoComplete="off" />
                             {searchQuery && <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-slate-600"><X size={14} /></button>}
                         </div>
 
@@ -873,7 +865,7 @@ const EventGalleryComponent: React.FC<EventGalleryProps> = ({
                                         <Camera size={18} />
                                         {t('uploadSelfie')}
                                         {/* FIX: Force Selfie Camera */}
-                                        <input type="file" accept="image/*" capture="user" className="hidden" onChange={handleFindMeUpload} />
+                                        <input id="find-me-upload" name="find-me-upload" type="file" accept="image/*" capture="user" className="hidden" onChange={handleFindMeUpload} autoComplete="off" />
                                     </label>
                                     {findMeImage && (
                                         <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-indigo-500 shadow-sm"><img src={findMeImage} className="w-full h-full object-cover" alt="Selfie" /></div>
@@ -892,19 +884,6 @@ const EventGalleryComponent: React.FC<EventGalleryProps> = ({
                             listClassName="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4"
                             itemClassName=""
                             overscan={5} // Render 5 extra items outside visible area
-                            components={{
-                                // Custom wrapper to maintain grid layout
-                                List: React.forwardRef<HTMLDivElement, { children?: React.ReactNode }>((props, ref) => (
-                                    <div ref={ref} className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                                        {props.children}
-                                    </div>
-                                )),
-                                Item: React.forwardRef<HTMLDivElement, { children?: React.ReactNode }>((props, ref) => (
-                                    <div ref={ref}>
-                                        {props.children}
-                                    </div>
-                                ))
-                            }}
                         />
                     </div>
 
@@ -943,7 +922,7 @@ const EventGalleryComponent: React.FC<EventGalleryProps> = ({
                     <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 mb-8">
                         <h3 className="text-lg font-bold text-slate-900 mb-4">{t('signGuestbook')}</h3>
                         <form onSubmit={handleGuestbookSubmit} className="space-y-4">
-                            <input type="text" value={guestbookName} onChange={(e) => setGuestbookName(e.target.value)} placeholder={t('yourName')} required className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none" />
+                            <input id="guestbook-name-input" name="guestbook-name" type="text" value={guestbookName} onChange={(e) => setGuestbookName(e.target.value)} placeholder={t('yourName')} required className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none" autoComplete="name" />
                             <textarea value={guestbookMessage} onChange={(e) => setGuestbookMessage(e.target.value)} placeholder={t('leaveMessage')} required className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none h-24 resize-none" />
                             <button type="submit" className="w-full bg-slate-900 text-white py-3 rounded-xl font-bold hover:bg-slate-800 transition-colors flex items-center justify-center gap-2"><Send size={18} /> {t('signGuestbook')}</button>
                         </form>

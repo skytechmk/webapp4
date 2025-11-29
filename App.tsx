@@ -200,22 +200,25 @@ export default function App() {
 
     // MEDIA UPLOAD REAL-TIME UPDATES
     const handleMediaUploaded = (newItem: MediaItem) => {
-      console.log('Media uploaded event received:', newItem);
-      setEvents(prev => prev.map(event => {
-        if (event.id === newItem.eventId) {
-          // Add new media item to the event with proper URLs
-          const processedItem = {
-            ...newItem,
-            url: buildProxyUrl(newItem.url),
-            previewUrl: newItem.previewUrl ? buildProxyUrl(newItem.previewUrl) : buildProxyUrl(newItem.url)
-          };
-          return {
-            ...event,
-            media: [processedItem, ...event.media]
-          };
-        }
-        return event;
-      }));
+        console.log('App: Received media_uploaded event for event', newItem.eventId);
+        setEvents(prev => prev.map(event => {
+            if (event.id === newItem.eventId) {
+                console.log('App: Adding media to event', event.id, 'current media count:', event.media.length);
+                // Add new media item to the event with proper URLs
+                const processedItem = {
+                    ...newItem,
+                    url: buildProxyUrl(newItem.url),
+                    previewUrl: newItem.previewUrl ? buildProxyUrl(newItem.previewUrl) : buildProxyUrl(newItem.url)
+                };
+                const updatedEvent = {
+                    ...event,
+                    media: [processedItem, ...event.media]
+                };
+                console.log('App: Updated event media count:', updatedEvent.media.length);
+                return updatedEvent;
+            }
+            return event;
+        }));
     };
 
     const handleMediaProcessed = (data: { id: string, previewUrl: string, url?: string }) => {
@@ -625,14 +628,17 @@ export default function App() {
   };
 
   const initiateMediaAction = (action: 'upload' | 'camera') => {
+    console.log('initiateMediaAction called:', { action, currentUser: !!currentUser, guestName });
     setLastUsedInput(action);
 
     if (currentUser || guestName) {
       const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+      console.log('Device type:', isMobile ? 'mobile' : 'desktop');
 
       if (isMobile) {
         // Add a small delay for mobile devices to ensure UI is ready
         setTimeout(() => {
+          console.log('Triggering file input click for:', action);
           if (action === 'camera') {
             cameraInputRef.current?.click();
           } else {
@@ -641,16 +647,24 @@ export default function App() {
         }, 100);
       } else {
         // Immediate action for desktop
+        console.log('Triggering file input click for:', action);
         if (action === 'camera') cameraInputRef.current?.click();
         else fileInputRef.current?.click();
       }
     } else {
+      console.log('No user/guest, showing login modal');
       setPendingAction(action);
       setShowGuestLogin(true);
     }
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    console.log('handleFileUpload called:', {
+      files: e.target.files,
+      filesLength: e.target.files?.length,
+      activeEvent: activeEvent?.id
+    });
+
     if (!e.target.files || !e.target.files[0] || !activeEvent) {
       console.log('File upload cancelled or no file selected');
       return;
@@ -716,7 +730,14 @@ export default function App() {
 
       let finalCaption = userCaption;
       if (!finalCaption && type === 'image') {
-        finalCaption = await api.generateImageCaption(src);
+        try {
+          console.log('Attempting AI caption generation...');
+          finalCaption = await api.generateImageCaption(src);
+          console.log('AI caption generated:', finalCaption);
+        } catch (aiError) {
+          console.warn('AI caption generation failed, using default caption:', aiError);
+          finalCaption = 'Captured moment'; // Fallback caption
+        }
       }
       const config = currentUser ? getTierConfigForUser(currentUser) : TIER_CONFIG[TierLevel.FREE];
       const canWatermark = currentUser?.role === UserRole.PHOTOGRAPHER && config.allowWatermark;
@@ -836,8 +857,8 @@ export default function App() {
         console.log('Mobile upload error details:', {
           userAgent: navigator.userAgent,
           error: e.message,
-          fileSize: file?.size,
-          fileType: file?.type,
+          fileSize: previewMedia?.file?.size,
+          fileType: previewMedia?.file?.type,
           timestamp: new Date().toISOString()
         });
       }
@@ -1096,8 +1117,8 @@ export default function App() {
 
       <PWAInstallPrompt t={t} />
 
-      <input key={fileInputKey} type="file" ref={fileInputRef} className="hidden" accept="image/*,video/*" onChange={handleFileUpload} />
-      <input key={cameraInputKey} type="file" ref={cameraInputRef} className="hidden" accept="image/*" capture="environment" onChange={handleFileUpload} />
+      <input key={fileInputKey} id="file-upload-input" name="file-upload" type="file" ref={fileInputRef} className="hidden" accept="image/*,video/*" onChange={handleFileUpload} autoComplete="off" />
+      <input key={cameraInputKey} id="camera-upload-input" name="camera-upload" type="file" ref={cameraInputRef} className="hidden" accept="image/*" capture="environment" onChange={handleFileUpload} autoComplete="off" />
 
       {previewMedia && (
         <Suspense fallback={null}>
