@@ -99,6 +99,37 @@ export const processFileUpload = async (file, metadata, userId = null) => {
         uploadProgress.set(uploadId, { status: 'completed', progress: 100 });
         notifyUploadProgress(eventId, uploadId, 'completed', 100);
 
+        // Emit media_uploaded event for real-time updates
+        const io = getIo();
+        if (io) {
+            // Get the complete media item from database
+            db.get("SELECT * FROM media WHERE id = ?", [uploadId], (err, mediaItem) => {
+                if (!err && mediaItem) {
+                    // Format the media item for client
+                    const formattedItem = {
+                        id: mediaItem.id,
+                        eventId: mediaItem.eventId,
+                        type: mediaItem.type,
+                        url: mediaItem.url,
+                        previewUrl: mediaItem.previewUrl,
+                        caption: mediaItem.caption,
+                        uploadedAt: mediaItem.uploadedAt,
+                        uploaderName: mediaItem.uploaderName,
+                        uploaderId: mediaItem.uploaderId,
+                        likes: mediaItem.likes || 0,
+                        privacy: mediaItem.privacy || 'public',
+                        isWatermarked: !!mediaItem.isWatermarked,
+                        watermarkText: mediaItem.watermarkText,
+                        isProcessing: false
+                    };
+
+                    // Emit to all clients in the event room
+                    io.to(eventId).emit('media_uploaded', formattedItem);
+                    console.log(`📡 Emitted media_uploaded event for ${uploadId} to event ${eventId}`);
+                }
+            });
+        }
+
         console.log(`✅ Upload completed for ${uploadId}`);
         return { success: true, uploadId };
 
@@ -199,6 +230,17 @@ const processImageUpload = async (file, s3Key, previewKey, eventId, uploadId) =>
 
         console.log(`✅ Image upload completed for ${uploadId}`);
 
+        // Emit media_processed event for real-time updates
+        const io = getIo();
+        if (io) {
+            io.to(eventId).emit('media_processed', {
+                id: uploadId,
+                previewUrl: previewKey,
+                url: s3Key
+            });
+            console.log(`📡 Emitted media_processed event for ${uploadId} to event ${eventId}`);
+        }
+
     } catch (error) {
         console.error(`❌ Error processing image upload for ${uploadId}:`, error);
         throw error;
@@ -254,6 +296,17 @@ const processVideoUpload = async (file, s3Key, previewKey, eventId, uploadId) =>
 
                     // Update database
                     db.run("UPDATE media SET isProcessing = 0, previewUrl = ? WHERE id = ?", [previewKey, uploadId]);
+
+                    // Emit media_processed event for real-time updates
+                    const io = getIo();
+                    if (io) {
+                        io.to(eventId).emit('media_processed', {
+                            id: uploadId,
+                            previewUrl: previewKey,
+                            url: s3Key
+                        });
+                        console.log(`📡 Emitted media_processed event for video ${uploadId} to event ${eventId}`);
+                    }
 
                     // Notify completion
                     notifyUploadProgress(eventId, uploadId, 'completed', 100);
