@@ -187,6 +187,13 @@ export const api = {
         return res.json();
     },
 
+    // Fetch media item by ID
+    getMediaById: async (mediaId: string): Promise<MediaItem> => {
+        const res = await fetch(`${API_URL}/api/media/${mediaId}`, { headers: { ...getAuthHeaders() } });
+        if (!res.ok) throw new Error('Failed to fetch media item');
+        return res.json();
+    },
+
     generateImageCaption: async (base64Image: string): Promise<string> => {
         const res = await fetch(`${API_URL}/api/ai/generate-caption`, {
             method: 'POST',
@@ -359,18 +366,25 @@ const pollUploadStatus = async (
             }
 
             if (status.status === 'completed') {
-                // For now, return a placeholder - in production you'd fetch the actual media item
-                const mediaItem: MediaItem = {
-                    id: uploadId,
-                    eventId: '', // Would be populated from original request
-                    type: 'image', // Would be populated from original request
-                    url: '', // Would be populated from server response
-                    caption: '', // Would be populated from original request
-                    uploadedAt: new Date().toISOString(),
-                    uploaderName: '', // Would be populated from original request
-                    privacy: 'public'
-                };
-                resolve(mediaItem);
+                // Fetch the actual media item from the database
+                try {
+                    const mediaItem = await api.getMediaById(uploadId);
+                    resolve(mediaItem);
+                } catch (fetchError) {
+                    console.error('Failed to fetch completed media item:', fetchError);
+                    // Fallback to placeholder if fetch fails
+                    const placeholderItem: MediaItem = {
+                        id: uploadId,
+                        eventId: '',
+                        type: 'image',
+                        url: '',
+                        caption: '',
+                        uploadedAt: new Date().toISOString(),
+                        uploaderName: '',
+                        privacy: 'public'
+                    };
+                    resolve(placeholderItem);
+                }
             } else if (status.status === 'failed') {
                 reject(new Error(status.error || 'Upload failed'));
             } else if (attempts >= maxAttempts) {

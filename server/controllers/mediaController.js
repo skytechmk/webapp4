@@ -141,6 +141,55 @@ export const bulkDeleteMedia = async (req, res) => {
     });
 };
 
+export const getMediaById = (req, res) => {
+    db.get(`
+        SELECT
+            media.*,
+            events.title as eventTitle,
+            events.hostId,
+            users.name as hostName,
+            users.tier as hostTier
+        FROM media
+        JOIN events ON media.eventId = events.id
+        LEFT JOIN users ON events.hostId = users.id
+        WHERE media.id = ?
+    `, [req.params.id], (err, row) => {
+        if (err) return res.status(500).json({ error: err.message });
+        if (!row) return res.status(404).json({ error: "Media not found" });
+
+        // Check privacy permissions
+        if (row.privacy === 'private') {
+            // Allow access if user is the uploader, host, or admin
+            const hasAccess = req.user?.role === 'ADMIN' ||
+                            req.user?.id === row.uploaderId ||
+                            req.user?.id === row.hostId;
+            if (!hasAccess) {
+                return res.status(403).json({ error: "Access denied" });
+            }
+        }
+
+        // Format the response
+        const mediaItem = {
+            id: row.id,
+            eventId: row.eventId,
+            type: row.type,
+            url: getPublicUrl(row.url),
+            previewUrl: row.previewUrl ? getPublicUrl(row.previewUrl) : null,
+            caption: row.caption,
+            uploadedAt: row.uploadedAt,
+            uploaderName: row.uploaderName,
+            uploaderId: row.uploaderId,
+            likes: row.likes || 0,
+            privacy: row.privacy || 'public',
+            isWatermarked: !!row.isWatermarked,
+            watermarkText: row.watermarkText,
+            isProcessing: !!row.isProcessing
+        };
+
+        res.json(mediaItem);
+    });
+};
+
 export const likeMedia = (req, res) => {
     // Implementation for liking media
     // Note: The original code didn't have a specific endpoint logic for this in the snippet provided,

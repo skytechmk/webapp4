@@ -40,6 +40,7 @@ const router = express.Router();
 
 router.post('/', uploadLimiter, optionalAuth, upload.single('file'), mediaController.uploadMedia);
 router.get('/upload/:uploadId/status', optionalAuth, mediaController.getUploadStatus);
+router.get('/:id', optionalAuth, mediaController.getMediaById);
 router.delete('/:id', authenticateToken, mediaController.deleteMedia);
 router.post('/bulk-delete', authenticateToken, mediaController.bulkDeleteMedia);
 router.put('/:id/like', mediaController.likeMedia);
