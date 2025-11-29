@@ -7,41 +7,58 @@ class SocketService {
 
     connect(userToken?: string) {
       if (this.socket && this.socket.connected) return;
-  
+
       // Disconnect existing socket if it's in a bad state
       if (this.socket && !this.socket.connected) {
         this.socket.disconnect();
         this.socket = null;
       }
-  
+
+      // Detect mobile devices for better settings
+      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
       this.socket = io(API_URL, {
-        // More conservative settings for mobile/iOS
-        transports: ['websocket', 'polling'],
-        timeout: 20000,
+        // Mobile-optimized settings
+        transports: isMobile ? ['polling', 'websocket'] : ['websocket', 'polling'],
+        timeout: isMobile ? 30000 : 20000,
         forceNew: false,
         reconnection: true,
-        reconnectionAttempts: 5,
-        reconnectionDelay: 1000,
+        reconnectionAttempts: isMobile ? 10 : 5,
+        reconnectionDelay: isMobile ? 2000 : 1000,
+        reconnectionDelayMax: isMobile ? 10000 : 5000,
+        randomizationFactor: 0.5,
+        // Mobile-specific optimizations
+        upgrade: !isMobile, // Disable upgrade on mobile for better stability
+        rememberUpgrade: !isMobile,
       });
-  
+
       this.socket.on('connect', () => {
-        // Connected to Socket.io server
+        console.log('Socket connected successfully');
         // Authenticate if we have a token
         if (userToken) {
           this.socket?.emit('authenticate', userToken);
         }
       });
-  
+
       this.socket.on('disconnect', (reason) => {
-        // Socket disconnected
+        console.log('Socket disconnected:', reason);
         // Don't auto-reconnect on mobile if user navigated away
         if (reason === 'io client disconnect' || document.hidden) {
           this.socket = null;
         }
       });
-  
+
       this.socket.on('connect_error', (error) => {
-        // Socket connection error - continue silently
+        console.warn('Socket connection error:', error.message);
+        // Continue silently but log for debugging
+      });
+
+      this.socket.on('reconnect', (attemptNumber) => {
+        console.log('Socket reconnected after', attemptNumber, 'attempts');
+      });
+
+      this.socket.on('reconnect_error', (error) => {
+        console.warn('Socket reconnection failed:', error.message);
       });
     }
 

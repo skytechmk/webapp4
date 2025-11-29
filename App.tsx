@@ -89,6 +89,10 @@ export default function App() {
   const [adminStatus, setAdminStatus] = useState<{ adminId: string, online: boolean, lastSeen: number }[]>([]);
   const [showSupportChat, setShowSupportChat] = useState(false);
 
+  // Mobile-specific state for file input management
+  const [fileInputKey, setFileInputKey] = useState('file-input-v1');
+  const [cameraInputKey, setCameraInputKey] = useState('camera-input-v1');
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
@@ -622,9 +626,24 @@ export default function App() {
 
   const initiateMediaAction = (action: 'upload' | 'camera') => {
     setLastUsedInput(action);
+
     if (currentUser || guestName) {
-      if (action === 'camera') cameraInputRef.current?.click();
-      else fileInputRef.current?.click();
+      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
+      if (isMobile) {
+        // Add a small delay for mobile devices to ensure UI is ready
+        setTimeout(() => {
+          if (action === 'camera') {
+            cameraInputRef.current?.click();
+          } else {
+            fileInputRef.current?.click();
+          }
+        }, 100);
+      } else {
+        // Immediate action for desktop
+        if (action === 'camera') cameraInputRef.current?.click();
+        else fileInputRef.current?.click();
+      }
     } else {
       setPendingAction(action);
       setShowGuestLogin(true);
@@ -632,11 +651,36 @@ export default function App() {
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files || !e.target.files[0] || !activeEvent) return;
+    if (!e.target.files || !e.target.files[0] || !activeEvent) {
+      console.log('File upload cancelled or no file selected');
+      return;
+    }
+
     const file = e.target.files[0];
+    console.log('File selected:', {
+      name: file.name,
+      size: file.size,
+      type: file.type,
+      lastModified: file.lastModified
+    });
+
+    // Validate file size (mobile devices might have different limits)
+    const maxSize = 50 * 1024 * 1024; // 50MB
+    if (file.size > maxSize) {
+      alert('File is too large. Please select a file smaller than 50MB.');
+      // Reset input for mobile devices
+      e.target.value = '';
+      return;
+    }
+
     const type = file.type.startsWith('video') ? 'video' : 'image';
     const url = URL.createObjectURL(file);
     setPreviewMedia({ type, src: url, file });
+
+    // Reset input immediately for mobile devices to allow re-selection
+    setTimeout(() => {
+      e.target.value = '';
+    }, 100);
   };
 
   const confirmUpload = async (userCaption: string, userPrivacy: 'public' | 'private', rotation: number = 0) => {
@@ -752,15 +796,50 @@ export default function App() {
       }
 
       setPreviewMedia(null);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-      if (cameraInputRef.current) cameraInputRef.current.value = '';
+
+      // Mobile-specific file input reset
+      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
+      if (isMobile) {
+        // Force re-render of file inputs on mobile by changing keys
+        setFileInputKey(`file-input-v${Date.now()}`);
+        setCameraInputKey(`camera-input-v${Date.now()}`);
+      } else {
+        // Standard reset for desktop
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        if (cameraInputRef.current) cameraInputRef.current.value = '';
+      }
     } catch (e: any) {
       console.error("Upload failed", e);
-      // Handle Storage Limit Error specifically
+
+      // Enhanced error handling for mobile devices
+      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
+      let errorMessage = "Upload failed. Please try again.";
+
       if (e.message === 'Storage limit exceeded' || (e.response && e.response.status === 413)) {
-        alert(t('storageLimit'));
-      } else {
-        alert("Upload failed. Please try again.");
+        errorMessage = t('storageLimit') || "Storage limit exceeded. Please upgrade your plan.";
+      } else if (e.message?.includes('NetworkError') || e.message?.includes('Failed to fetch')) {
+        errorMessage = isMobile
+          ? "Network connection issue. Please check your internet connection and try again."
+          : "Network error. Please check your connection and try again.";
+      } else if (e.message?.includes('timeout') || e.code === 'ECONNABORTED') {
+        errorMessage = "Upload timed out. Please try again with a smaller file.";
+      } else if (isMobile && e.message?.includes('file')) {
+        errorMessage = "File access issue. Please try selecting the file again.";
+      }
+
+      alert(errorMessage);
+
+      // Log additional debugging info for mobile
+      if (isMobile) {
+        console.log('Mobile upload error details:', {
+          userAgent: navigator.userAgent,
+          error: e.message,
+          fileSize: file?.size,
+          fileType: file?.type,
+          timestamp: new Date().toISOString()
+        });
       }
     } finally {
       setIsUploading(false);
@@ -1017,8 +1096,8 @@ export default function App() {
 
       <PWAInstallPrompt t={t} />
 
-      <input type="file" ref={fileInputRef} className="hidden" accept="image/*,video/*" onChange={handleFileUpload} />
-      <input key="camera-input-v2" type="file" ref={cameraInputRef} className="hidden" accept="image/*" capture="environment" onChange={handleFileUpload} />
+      <input key={fileInputKey} type="file" ref={fileInputRef} className="hidden" accept="image/*,video/*" onChange={handleFileUpload} />
+      <input key={cameraInputKey} type="file" ref={cameraInputRef} className="hidden" accept="image/*" capture="environment" onChange={handleFileUpload} />
 
       {previewMedia && (
         <Suspense fallback={null}>
