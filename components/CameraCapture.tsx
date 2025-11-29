@@ -1,9 +1,8 @@
-import React, { useRef, useState, useCallback } from 'react';
+import React, { useRef, useState } from 'react';
 import { X, Upload, Image as ImageIcon } from 'lucide-react';
-import { processImage } from '../utils/imageProcessing';
 
 interface CameraCaptureProps {
-  onCapture: (imageData: string) => void;
+  onCapture: (imageData: string, file: File) => void;
   onClose: () => void;
 }
 
@@ -17,11 +16,11 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onCapture, onClose
     if (file) {
       setIsProcessing(true);
       try {
-        // Process image without EXIF correction (preview modal handles orientation)
-        const processedImage = await processImage(file, 1920, 1080, false);
-        onCapture(processedImage);
+        // Don't process through canvas - preserve EXIF by using createObjectURL
+        const url = URL.createObjectURL(file);
+        onCapture(url, file);
       } catch (error) {
-        console.error('Error processing image:', error);
+        console.error('Error handling file:', error);
         setError('Failed to process image. Please try again.');
       } finally {
         setIsProcessing(false);

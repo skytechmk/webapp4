@@ -114,9 +114,9 @@ class ApiGateway {
             const eventRoutes = await import('../routes/eventRoutes.js');
             this.app.use('/api/events', eventRoutes.default);
 
-            // Media routes (protected)
+            // Media routes (protected/optional handled internally)
             const mediaRoutes = await import('../routes/mediaRoutes.js');
-            this.app.use('/api/media', authenticateToken, mediaRoutes.default);
+            this.app.use('/api/media', mediaRoutes.default);
 
             // User routes (protected)
             const userRoutes = await import('../routes/userRoutes.js');

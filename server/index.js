@@ -1,5 +1,6 @@
 import http from 'http';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { config } from './config/env.js';
 import { initDb } from './config/db.js';
@@ -10,6 +11,13 @@ import { monitoring } from './services/monitoringService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const uploadDir = path.join(__dirname, 'uploads');
+
+// Ensure upload directory exists
+if (!fs.existsSync(uploadDir)) {
+    console.log(`📂 Creating upload directory: ${uploadDir}`);
+    fs.mkdirSync(uploadDir, { recursive: true });
+}
 
 // Initialize Database
 initDb();

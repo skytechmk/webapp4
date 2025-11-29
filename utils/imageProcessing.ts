@@ -89,9 +89,11 @@ export const createPhotoStrip = async (images: string[]): Promise<string> => {
   });
 };
 
-export const processImage = async (file: File, maxWidth = 1920, maxHeight = 1080, applyExifCorrection = false): Promise<string> => {
+export const processImage = async (file: File, maxWidth = 1920, maxHeight = 1080, applyExifCorrection = false, deviceOrientation = 0): Promise<string> => {
   // 1. Get the orientation first (only if we need to apply correction)
   const orientation = applyExifCorrection ? await getOrientation(file) : 1;
+  console.log('processImage: file=', file.name, 'orientation=', orientation, 'applyExifCorrection=', applyExifCorrection, 'deviceOrientation=', deviceOrientation);
+
 
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -125,21 +127,35 @@ export const processImage = async (file: File, maxWidth = 1920, maxHeight = 1080
           return;
         }
 
-        // 3. Set canvas dimensions based on orientation (only if applying correction)
-        let finalWidth = width;
-        let finalHeight = height;
-
-        if (applyExifCorrection && orientation > 4 && orientation < 9) {
-          // If orientation is 5-8, the image is rotated 90deg, so we swap width/height
-          finalWidth = height;
-          finalHeight = width;
+        // 3. Determine rotation based on device orientation
+        // iPhone reports: 0 = portrait, 90 = landscape-left, -90 = landscape-right, 180 = upside-down
+        let rotationDegrees = 0;
+        if (deviceOrientation === -90) {
+          rotationDegrees = 90; // Rotate 90° CW to correct landscape-right
+        } else if (deviceOrientation === 90) {
+          rotationDegrees = -90; // Rotate 90° CCW to correct landscape-left
+        } else if (deviceOrientation === 180) {
+          rotationDegrees = 180; // Rotate 180° for upside-down
         }
 
-        canvas.width = finalWidth;
-        canvas.height = finalHeight;
+        // 4. Set canvas dimensions (swap if rotating 90° or 270°)
+        if (rotationDegrees === 90 || rotationDegrees === -90) {
+          canvas.width = height;
+          canvas.height = width;
+        } else {
+          canvas.width = width;
+          canvas.height = height;
+        }
 
-        // 4. Apply rotation/flip to the context (only if applying correction)
-        if (applyExifCorrection) {
+        // 5. Apply rotation transform
+        if (rotationDegrees !== 0) {
+          ctx.translate(canvas.width / 2, canvas.height / 2);
+          ctx.rotate((rotationDegrees * Math.PI) / 180);
+          ctx.translate(-width / 2, -height / 2);
+        }
+
+        // 6. Apply EXIF-based rotation if needed (fallback)
+        if (applyExifCorrection && orientation > 1) {
           switch (orientation) {
             case 2: ctx.transform(-1, 0, 0, 1, width, 0); break;
             case 3: ctx.transform(-1, 0, 0, -1, width, height); break;
@@ -152,7 +168,7 @@ export const processImage = async (file: File, maxWidth = 1920, maxHeight = 1080
           }
         }
 
-        // 5. Draw the image (always use the 'logical' width/height here)
+        // 7. Draw the image
         ctx.drawImage(img, 0, 0, width, height);
 
         resolve(canvas.toDataURL('image/jpeg', 0.85));

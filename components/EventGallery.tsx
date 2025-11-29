@@ -338,11 +338,25 @@ const EventGalleryComponent: React.FC<EventGalleryProps> = ({
     const displayMedia = useMemo(() => {
         let media = filteredMedia || localMedia;
         console.log('EventGallery: computing displayMedia from', media.length, 'items (filteredMedia:', !!filteredMedia, 'localMedia:', localMedia.length, ')');
+        console.log('EventGallery: isOwner=', isOwner, 'currentUser.role=', currentUser?.role, 'showMyUploads=', showMyUploads);
 
         // Filter for Privacy
         if (!isOwner && currentUser?.role !== UserRole.ADMIN) {
+            console.log('EventGallery: Applying privacy filter (not owner/admin)');
+            const beforeFilter = media.length;
             // Show public items OR items owned by the current user
-            media = media.filter(item => item.privacy !== 'private' || (currentUser && item.uploaderId === currentUser.id));
+            media = media.filter(item => {
+                const isPublic = item.privacy !== 'private';
+                const isOwnedByUser = currentUser && item.uploaderId === currentUser.id;
+                const shouldShow = isPublic || isOwnedByUser;
+                if (!shouldShow) {
+                    console.log('EventGallery: Filtering out item', item.id, 'privacy=', item.privacy, 'uploaderId=', item.uploaderId, 'currentUserId=', currentUser?.id);
+                }
+                return shouldShow;
+            });
+            console.log('EventGallery: Privacy filter removed', beforeFilter - media.length, 'items');
+        } else {
+            console.log('EventGallery: Skipping privacy filter (owner or admin)');
         }
 
         // Filter for My Uploads toggle
@@ -590,9 +604,12 @@ const EventGalleryComponent: React.FC<EventGalleryProps> = ({
         const items: (MediaItem | { type: 'ad', vendor: Vendor } | { type: 'add-memory' })[] = [];
         let adIndex = 0;
 
+        console.log('EventGallery: Computing gridItems from displayMedia.length=', displayMedia.length);
+
         // Add "Add Memory" card if applicable
         if ((isOwner || currentUser?.role === UserRole.ADMIN || currentUser) && !isBulkDeleteMode && !searchQuery) {
             items.push({ type: 'add-memory' });
+            console.log('EventGallery: Added "Add Memory" card');
         }
 
         for (let i = 0; i < displayMedia.length; i++) {
@@ -607,6 +624,7 @@ const EventGalleryComponent: React.FC<EventGalleryProps> = ({
 
             items.push(item);
         }
+        console.log('EventGallery: gridItems computed with', items.length, 'total items');
         return items;
     }, [displayMedia, isOwner, currentUser, isBulkDeleteMode, searchQuery, vendors]);
 
@@ -645,7 +663,7 @@ const EventGalleryComponent: React.FC<EventGalleryProps> = ({
                         // Updated Image Grid Item with Fallback
                         <div className="w-full aspect-square bg-slate-200 relative overflow-hidden">
                             <img
-                                src={mediaItem.url}
+                                src={mediaItem.previewUrl || mediaItem.url}
                                 alt={mediaItem.caption || 'Photo'}
                                 className="w-full h-full object-cover"
                                 style={{ transform: getOrientationTransform(mediaItem.orientation) }}
@@ -875,10 +893,10 @@ const EventGalleryComponent: React.FC<EventGalleryProps> = ({
                         </div>
                     )}
 
-                    <div className="mb-24">
+                    <div className="mb-24 min-h-screen">
                         {/* Virtual Scrolling Grid for Performance */}
                         <VirtuosoGrid
-                            style={{ height: '100%' }}
+                            style={{ height: '100vh' }}
                             data={gridItems}
                             itemContent={(index) => renderGridItem(index)}
                             listClassName="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4"
@@ -1082,10 +1100,10 @@ const EventGalleryComponent: React.FC<EventGalleryProps> = ({
             }
 
             {showShareModal && <ShareModal eventId={event.id} eventTitle={event.title} onClose={() => setShowShareModal(false)} t={t} />}
-                </main >
-            );
-        };
-        
-        EventGalleryComponent.displayName = 'EventGallery';
-        
-        export const EventGallery = memo(EventGalleryComponent);
+        </main >
+    );
+};
+
+EventGalleryComponent.displayName = 'EventGallery';
+
+export const EventGallery = memo(EventGalleryComponent);

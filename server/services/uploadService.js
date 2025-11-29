@@ -15,7 +15,10 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const uploadDir = path.join(__dirname, '../../server/uploads');
 
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
+if (!fs.existsSync(uploadDir)) {
+    console.log(`📂 Creating upload directory on startup: ${uploadDir}`);
+    fs.mkdirSync(uploadDir, { recursive: true });
+}
 
 // Upload queue for background processing
 class UploadQueue {
@@ -204,32 +207,44 @@ const processImageUpload = async (file, s3Key, previewKey, eventId, uploadId) =>
     try {
         // Ensure upload directory exists
         if (!fs.existsSync(uploadDir)) {
+            console.log(`📂 Creating upload directory: ${uploadDir}`);
             fs.mkdirSync(uploadDir, { recursive: true });
         }
 
         console.log(`📸 Creating thumbnail for ${uploadId} at ${previewPath}`);
 
         // Create thumbnail with error handling
-        await sharp(file.path)
-            .resize(400, 400, { fit: 'inside', withoutEnlargement: true })
-            .jpeg({ quality: 80, progressive: true })
-            .toFile(previewPath);
-
-        thumbnailCreated = true;
-        console.log(`✅ Thumbnail created successfully for ${uploadId}`);
+        try {
+            await sharp(file.path)
+                .rotate() // Auto-rotate based on EXIF orientation
+                .resize(400, 400, { fit: 'inside', withoutEnlargement: true })
+                .jpeg({ quality: 80, progressive: true })
+                .toFile(previewPath);
+            thumbnailCreated = true;
+            console.log(`✅ Thumbnail created successfully for ${uploadId}`);
+        } catch (sharpError) {
+            console.error(`❌ Sharp processing failed for ${uploadId}:`, sharpError);
+            throw new Error(`Image processing failed: ${sharpError.message}`);
+        }
 
         console.log(`📤 Uploading image and thumbnail to S3 for ${uploadId}`);
 
         // Upload both files in parallel (don't auto-delete, we'll handle cleanup)
-        await Promise.all([
-            uploadToS3(file.path, s3Key, file.mimetype, false),
-            uploadToS3(previewPath, previewKey, 'image/jpeg', false)
-        ]);
+        try {
+            await Promise.all([
+                uploadToS3(file.path, s3Key, file.mimetype, false),
+                uploadToS3(previewPath, previewKey, 'image/jpeg', false)
+            ]);
+            console.log(`✅ S3 upload completed for ${uploadId}`);
+        } catch (s3Error) {
+            console.error(`❌ S3 upload failed for ${uploadId}:`, s3Error);
+            throw new Error(`Storage upload failed: ${s3Error.message}`);
+        }
 
         // Update progress
         notifyUploadProgress(eventId, uploadId, 'uploading', 75);
 
-        console.log(`✅ Image upload completed for ${uploadId}`);
+        console.log(`✅ Image upload flow completed for ${uploadId}`);
 
         // Emit media_processed event for real-time updates
         const io = getIo();
@@ -272,6 +287,8 @@ const processVideoUpload = async (file, s3Key, previewKey, eventId, uploadId) =>
         // Update progress
         notifyUploadProgress(eventId, uploadId, 'processing', 25);
 
+        console.log(`🎬 Spawning ffmpeg for ${uploadId}:`, { input: inputPath, output: outputPath });
+
         const ffmpeg = spawn('ffmpeg', [
             '-i', inputPath,
             '-vf', 'scale=-2:720',
@@ -284,16 +301,29 @@ const processVideoUpload = async (file, s3Key, previewKey, eventId, uploadId) =>
             outputPath
         ]);
 
+        // Capture ffmpeg stderr for debugging
+        let stderr = '';
+        ffmpeg.stderr.on('data', (data) => {
+            stderr += data.toString();
+        });
+
         ffmpeg.on('close', async (code) => {
             try {
                 if (code === 0) {
+                    console.log(`✅ FFmpeg processing completed for ${uploadId}`);
                     console.log(`📤 Uploading video and preview to S3 for ${uploadId}`);
 
                     // Upload both files (don't auto-delete, we'll handle cleanup)
-                    await Promise.all([
-                        uploadToS3(inputPath, s3Key, file.mimetype, false),
-                        uploadToS3(outputPath, previewKey, 'video/mp4', false)
-                    ]);
+                    try {
+                        await Promise.all([
+                            uploadToS3(inputPath, s3Key, file.mimetype, false),
+                            uploadToS3(outputPath, previewKey, 'video/mp4', false)
+                        ]);
+                        console.log(`✅ S3 upload completed for ${uploadId}`);
+                    } catch (s3Error) {
+                        console.error(`❌ S3 upload failed for ${uploadId}:`, s3Error);
+                        throw new Error(`Storage upload failed: ${s3Error.message}`);
+                    }
 
                     // Update database
                     db.run("UPDATE media SET isProcessing = 0, previewUrl = ? WHERE id = ?", [previewKey, uploadId]);
@@ -312,9 +342,11 @@ const processVideoUpload = async (file, s3Key, previewKey, eventId, uploadId) =>
                     // Notify completion
                     notifyUploadProgress(eventId, uploadId, 'completed', 100);
 
-                    console.log(`✅ Video upload completed for ${uploadId}`);
+                    console.log(`✅ Video upload flow completed for ${uploadId}`);
                     resolve();
                 } else {
+                    console.error(`❌ FFmpeg failed with code ${code} for ${uploadId}`);
+                    console.error(`FFmpeg stderr:`, stderr.slice(-500)); // Log last 500 chars
                     throw new Error(`FFmpeg failed with code ${code}`);
                 }
             } catch (error) {
@@ -327,7 +359,7 @@ const processVideoUpload = async (file, s3Key, previewKey, eventId, uploadId) =>
         });
 
         ffmpeg.on('error', (err) => {
-            console.error(`FFmpeg error for ${uploadId}:`, err);
+            console.error(`❌ FFmpeg spawn error for ${uploadId}:`, err);
             reject(err);
         });
     });

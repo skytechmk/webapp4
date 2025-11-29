@@ -63,6 +63,12 @@ export const uploadMedia = async (req, res) => {
 
     try {
         // Queue the upload for background processing
+        console.log('🔄 Queuing file upload:', {
+            uploadId: body.id,
+            eventId: body.eventId,
+            type: body.type
+        });
+
         const result = await queueFileUpload(req.file, {
             id: body.id,
             eventId: body.eventId,
@@ -74,6 +80,8 @@ export const uploadMedia = async (req, res) => {
             watermarkText: body.watermarkText,
             privacy: body.privacy || 'public'
         }, req.user?.id);
+
+        console.log('✅ File queued successfully:', result);
 
         // Return immediate response with upload ID
         res.json({
@@ -87,7 +95,7 @@ export const uploadMedia = async (req, res) => {
 
         // Cleanup temp file
         if (req.file && req.file.path) {
-            fs.unlink(req.file.path, () => {});
+            fs.unlink(req.file.path, () => { });
         }
 
         res.status(500).json({
@@ -161,8 +169,8 @@ export const getMediaById = (req, res) => {
         if (row.privacy === 'private') {
             // Allow access if user is the uploader, host, or admin
             const hasAccess = req.user?.role === 'ADMIN' ||
-                            req.user?.id === row.uploaderId ||
-                            req.user?.id === row.hostId;
+                req.user?.id === row.uploaderId ||
+                req.user?.id === row.hostId;
             if (!hasAccess) {
                 return res.status(403).json({ error: "Access denied" });
             }
