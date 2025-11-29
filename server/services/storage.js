@@ -12,7 +12,7 @@ const s3Client = new S3Client({
     forcePathStyle: true
 });
 
-export const uploadToS3 = async (filePath, key, contentType) => {
+export const uploadToS3 = async (filePath, key, contentType, deleteAfterUpload = true) => {
     try {
         console.log('S3 Upload attempt:', { filePath, key, contentType, endpoint: config.S3.ENDPOINT, bucket: config.S3.BUCKET });
         const fileStream = fs.createReadStream(filePath);
@@ -30,7 +30,10 @@ export const uploadToS3 = async (filePath, key, contentType) => {
         });
         throw new Error(`Failed to upload media: ${err.message}`);
     } finally {
-        if (fs.existsSync(filePath)) fs.unlink(filePath, () => { });
+        // Only delete if requested (default behavior preserved)
+        if (deleteAfterUpload && fs.existsSync(filePath)) {
+            fs.unlink(filePath, () => { });
+        }
     }
 };
 

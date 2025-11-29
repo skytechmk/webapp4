@@ -167,33 +167,55 @@ const processImageUpload = async (file, s3Key, previewKey, eventId, uploadId) =>
 
     // Create thumbnail
     const previewPath = path.join(uploadDir, `thumb_${uploadId}.jpg`);
+    let thumbnailCreated = false;
 
     try {
+        // Ensure upload directory exists
+        if (!fs.existsSync(uploadDir)) {
+            fs.mkdirSync(uploadDir, { recursive: true });
+        }
+
+        console.log(`📸 Creating thumbnail for ${uploadId} at ${previewPath}`);
+
+        // Create thumbnail with error handling
         await sharp(file.path)
             .resize(400, 400, { fit: 'inside', withoutEnlargement: true })
             .jpeg({ quality: 80, progressive: true })
             .toFile(previewPath);
 
+        thumbnailCreated = true;
+        console.log(`✅ Thumbnail created successfully for ${uploadId}`);
+
         console.log(`📤 Uploading image and thumbnail to S3 for ${uploadId}`);
 
-        // Upload both files in parallel
+        // Upload both files in parallel (don't auto-delete, we'll handle cleanup)
         await Promise.all([
-            uploadToS3(file.path, s3Key, file.mimetype),
-            uploadToS3(previewPath, previewKey, 'image/jpeg')
+            uploadToS3(file.path, s3Key, file.mimetype, false),
+            uploadToS3(previewPath, previewKey, 'image/jpeg', false)
         ]);
 
         // Update progress
         notifyUploadProgress(eventId, uploadId, 'uploading', 75);
 
-        // Cleanup temp files
-        fs.unlinkSync(previewPath);
-
         console.log(`✅ Image upload completed for ${uploadId}`);
 
     } catch (error) {
-        // Cleanup on error
-        if (fs.existsSync(previewPath)) fs.unlinkSync(previewPath);
+        console.error(`❌ Error processing image upload for ${uploadId}:`, error);
         throw error;
+    } finally {
+        // Cleanup temp files - only delete if they exist
+        try {
+            if (thumbnailCreated && fs.existsSync(previewPath)) {
+                fs.unlinkSync(previewPath);
+                console.log(`🧹 Cleaned up thumbnail for ${uploadId}`);
+            }
+            if (fs.existsSync(file.path)) {
+                fs.unlinkSync(file.path);
+                console.log(`🧹 Cleaned up original file for ${uploadId}`);
+            }
+        } catch (cleanupError) {
+            console.warn(`⚠️ Failed to cleanup files for ${uploadId}:`, cleanupError);
+        }
     }
 };
 
@@ -224,10 +246,10 @@ const processVideoUpload = async (file, s3Key, previewKey, eventId, uploadId) =>
                 if (code === 0) {
                     console.log(`📤 Uploading video and preview to S3 for ${uploadId}`);
 
-                    // Upload both files
+                    // Upload both files (don't auto-delete, we'll handle cleanup)
                     await Promise.all([
-                        uploadToS3(inputPath, s3Key, file.mimetype),
-                        uploadToS3(outputPath, previewKey, 'video/mp4')
+                        uploadToS3(inputPath, s3Key, file.mimetype, false),
+                        uploadToS3(outputPath, previewKey, 'video/mp4', false)
                     ]);
 
                     // Update database
