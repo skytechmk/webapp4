@@ -70,7 +70,15 @@ export const MediaReviewModal: React.FC<MediaReviewModalProps> = ({
             controls
             loop
             playsInline
+            muted
             className="max-w-full max-h-full object-contain"
+            style={{ width: 'auto', height: 'auto', maxWidth: '100%', maxHeight: '100%' }}
+            onError={(e) => {
+              console.error('Video failed to load:', src, e);
+            }}
+            onLoadedMetadata={() => {
+              console.log('Video loaded successfully:', src);
+            }}
           />
         ) : (
           <img

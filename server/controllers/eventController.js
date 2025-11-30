@@ -73,7 +73,7 @@ export const getEvents = async (req, res) => {
 
 export const getEventById = async (req, res) => {
     // Use index on events.id (primary key) and idx_events_expires_at for expiration check
-    db.get(`SELECT events.*, users.tier as hostTier FROM events LEFT JOIN users ON events.hostId = users.id WHERE events.id = ?`, [req.params.id], async (err, evt) => {
+    db.get(`SELECT events.*, users.tier as hostTier, users.id as hostUserId, users.name as hostUserName, users.role as hostUserRole FROM events LEFT JOIN users ON events.hostId = users.id WHERE events.id = ?`, [req.params.id], async (err, evt) => {
         if (err || !evt) return res.status(404).json({ error: "Not found" });
         if (evt.expiresAt && new Date(evt.expiresAt) < new Date()) {
             return res.status(410).json({ error: "Event expired" });
@@ -91,7 +91,23 @@ export const getEventById = async (req, res) => {
         let signedCover = evt.coverImage;
         if (evt.coverImage && !evt.coverImage.startsWith('http')) signedCover = getPublicUrl(evt.coverImage);
 
-        res.json({ ...evt, media: signedMedia, guestbook: guestbookResult, coverImage: signedCover, hasPin: !!evt.pin, pin: undefined });
+        // Include host user information for guest access
+        const hostUser = evt.hostUserId ? {
+            id: evt.hostUserId,
+            name: evt.hostUserName,
+            tier: evt.hostTier,
+            role: evt.hostUserRole
+        } : null;
+
+        res.json({
+            ...evt,
+            media: signedMedia,
+            guestbook: guestbookResult,
+            coverImage: signedCover,
+            hasPin: !!evt.pin,
+            pin: undefined,
+            hostUser // Add host user to response
+        });
     });
 };
 

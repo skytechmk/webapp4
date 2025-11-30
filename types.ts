@@ -65,7 +65,7 @@ export const getTierConfigForUser = (user: User | null): TierConfig => {
 };
 
 export const getTierConfig = (tier: TierLevel): TierConfig => {
-    return TIER_CONFIG[tier];
+  return TIER_CONFIG[tier];
 };
 
 export type WatermarkPosition = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center';
@@ -82,12 +82,12 @@ export interface User {
   studioName?: string;
   website?: string;
   watermarkText?: string;
-  logoUrl?: string; 
-  watermarkOpacity?: number; 
-  watermarkSize?: number; 
+  logoUrl?: string;
+  watermarkOpacity?: number;
+  watermarkSize?: number;
   watermarkPosition?: WatermarkPosition;
-  watermarkOffsetX?: number; 
-  watermarkOffsetY?: number; 
+  watermarkOffsetX?: number;
+  watermarkOffsetY?: number;
 }
 
 export interface Comment {
@@ -133,17 +133,18 @@ export interface Event {
   date: string;
   city?: string; // NEW: Location for ad targeting
   hostId: string;
-  code: string; 
+  code: string;
   media: MediaItem[];
   guestbook?: GuestbookEntry[];
   coverImage?: string;
   coverMediaType?: 'image' | 'video';
-  expiresAt: string | null; 
-  pin?: string; 
-  hasPin?: boolean; 
+  expiresAt: string | null;
+  pin?: string;
+  hasPin?: boolean;
   views?: number;
   downloads?: number;
   hostTier?: TierLevel;
+  hostUser?: User; // Host user information for guest access
 }
 
 // NEW: Vendor Interface for Ad System

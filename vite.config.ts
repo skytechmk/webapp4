@@ -13,10 +13,10 @@ export default defineConfig({
       brotliSize: true,
     }),
     VitePWA({
-      registerType: 'autoUpdate', 
+      registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'masked-icon.svg'],
       devOptions: {
-        enabled: true 
+        enabled: true
       },
       manifest: {
         name: 'SnapifY - Event Sharing',
@@ -54,7 +54,23 @@ export default defineConfig({
             text: "text",
             url: "url"
           }
-        }
+        },
+        // File handling for PWA downloads
+        file_handlers: [
+          {
+            action: '/handle-files',
+            accept: {
+              'image/*': ['.jpg', '.jpeg', '.png', '.gif', '.webp'],
+              'video/*': ['.mp4', '.mov', '.avi', '.mkv']
+            }
+          }
+        ],
+        // Launch handler for file handling
+        launch_handler: {
+          client_mode: 'focus-existing'
+        },
+        // Handle links for better navigation
+        handle_links: 'preferred'
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
@@ -96,12 +112,12 @@ export default defineConfig({
     sourcemap: false,
     chunkSizeWarningLimit: 600,
     rollupOptions: {
-        output: {
-            manualChunks: {
-                vendor: ['react', 'react-dom'],
-                libs: ['socket.io-client', 'lucide-react', 'recharts', 'qrcode.react']
-            }
+      output: {
+        manualChunks: {
+          vendor: ['react', 'react-dom'],
+          libs: ['socket.io-client', 'lucide-react', 'recharts', 'qrcode.react']
         }
+      }
     }
   }
 });

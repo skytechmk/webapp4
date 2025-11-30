@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo, memo } from 'react';
 import { VirtuosoGrid } from 'react-virtuoso';
-import { ShieldCheck, Download, Calendar, LayoutGrid, Camera, Video, Star, Share2, Upload, CheckCircle, Link as LinkIcon, Play, Heart, X, Pause, BookOpen, Send, Lock, Search, ScanFace, Loader2, Trash2, CheckSquare, Square, ChevronLeft, ChevronRight, MessageSquare, Globe, AlertTriangle, Plus, ImagePlus, MapPin } from 'lucide-react';
+import { ShieldCheck, Download, Calendar, LayoutGrid, Camera, Video, Star, Share2, Upload, CheckCircle, Link as LinkIcon, Play, Heart, X, Pause, BookOpen, Send, Lock, Search, ScanFace, Loader2, Trash2, CheckSquare, Square, ChevronLeft, ChevronRight, MessageSquare, Globe, AlertTriangle, Plus, ImagePlus, MapPin, ArrowDown } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { Event, User, UserRole, MediaItem, TranslateFn, TierLevel, GuestbookEntry, Comment, Vendor } from '../types';
 import { api } from '../services/api';
 import { socketService } from '../services/socketService';
 import { isMobileDevice } from '../utils/deviceDetection';
+import { downloadMediaForMobile, generateFilename } from '../utils/mobileDownload';
+import { canUploadVideos, getVideoUploadUIState } from '../utils/videoPermissions';
 import { ShareModal } from './ShareModal';
 import { VendorAdCard } from './VendorAdCard';
 
@@ -89,11 +91,12 @@ const VideoGridItem: React.FC<{ item: MediaItem; onClick: () => void }> = memo((
             <video
                 ref={videoRef}
                 src={item.previewUrl || item.url}
-                className="w-full h-auto object-cover rounded-lg pointer-events-none bg-black min-h-[150px]"
+                className="w-full h-auto object-cover rounded-lg bg-black min-h-[150px]"
                 muted
                 playsInline
                 loop
                 preload="metadata"
+                style={{ pointerEvents: 'none' }} // Disable interaction in grid
             />
 
             {/* Play Icon Overlay */}
@@ -118,7 +121,7 @@ const VideoGridItem: React.FC<{ item: MediaItem; onClick: () => void }> = memo((
 interface EventGalleryProps {
     event: Event;
     currentUser: User | null;
-    hostUser: User | undefined;
+    hostUser: User | null | undefined;
     isEventExpired: boolean;
     isOwner: boolean;
     isHostPhotographer: boolean;
@@ -130,6 +133,7 @@ interface EventGalleryProps {
     onUpload: (type: 'camera' | 'upload') => void;
     onLike: (item: MediaItem) => void;
     onOpenLiveSlideshow: () => void;
+    onRefresh: () => Promise<void>;
     t: TranslateFn;
 }
 
@@ -148,17 +152,55 @@ const EventGalleryComponent: React.FC<EventGalleryProps> = ({
     onUpload,
     onLike,
     onOpenLiveSlideshow,
+    onRefresh,
     t
 }) => {
     // State
     const [localMedia, setLocalMedia] = useState<MediaItem[]>(event.media);
     const [localGuestbook, setLocalGuestbook] = useState<GuestbookEntry[]>(event.guestbook || []);
-
-    const [linkCopied, setLinkCopied] = useState(false);
-
-    // Lightbox & Slideshow State
+    const [activeTab, setActiveTab] = useState<'gallery' | 'guestbook'>('gallery');
     const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
     const [isSlideshowPlaying, setIsSlideshowPlaying] = useState(false);
+    const [showShareModal, setShowShareModal] = useState(false);
+    const [linkCopied, setLinkCopied] = useState(false);
+    const [commentText, setCommentText] = useState('');
+    const slideshowIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+    // Pull to Refresh State
+    const [isRefreshing, setIsRefreshing] = useState(false);
+    const [pullDistance, setPullDistance] = useState(0);
+    const pullToRefreshTouchStartRef = useRef(0); // Renamed to avoid conflict
+    const PULL_THRESHOLD = 80;
+
+    const handleTouchStart = (e: React.TouchEvent) => {
+        if (window.scrollY === 0) {
+            pullToRefreshTouchStartRef.current = e.touches[0].clientY;
+        }
+    };
+
+    const handleTouchMove = (e: React.TouchEvent) => {
+        if (pullToRefreshTouchStartRef.current > 0 && window.scrollY === 0) {
+            const currentY = e.touches[0].clientY;
+            const diff = currentY - pullToRefreshTouchStartRef.current;
+            if (diff > 0) {
+                setPullDistance(diff);
+            }
+        }
+    };
+
+    const handleTouchEnd = async () => {
+        if (pullDistance > PULL_THRESHOLD) {
+            setIsRefreshing(true);
+            setPullDistance(0);
+            try {
+                await onRefresh();
+            } finally {
+                setIsRefreshing(false);
+            }
+        }
+        setPullDistance(0);
+        pullToRefreshTouchStartRef.current = 0;
+    };
 
     // Sliding Logic State
     const [dragOffset, setDragOffset] = useState(0);
@@ -166,12 +208,6 @@ const EventGalleryComponent: React.FC<EventGalleryProps> = ({
     const [isAnimating, setIsAnimating] = useState(false);
     const [isSnapping, setIsSnapping] = useState(false); // Prevent transition during index reset
     const touchStartRef = useRef<number | null>(null);
-
-    // Comments State
-    const [commentText, setCommentText] = useState('');
-    const [showShareModal, setShowShareModal] = useState(false);
-
-    const [activeTab, setActiveTab] = useState<'gallery' | 'guestbook'>('gallery');
 
     // Guestbook State
     const [guestbookMessage, setGuestbookMessage] = useState('');
@@ -213,6 +249,12 @@ const EventGalleryComponent: React.FC<EventGalleryProps> = ({
     const [isBulkDeleteMode, setIsBulkDeleteMode] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
 
+    // Download State
+    const [downloadStatus, setDownloadStatus] = useState<{ show: boolean; message: string; type: 'success' | 'error' | 'info' } | null>(null);
+
+    // Video Permissions State
+    const [videoPermissions, setVideoPermissions] = useState(() => getVideoUploadUIState(currentUser, hostUser?.tier));
+
     // NEW: Vendors State for Ads
     const [vendors, setVendors] = useState<Vendor[]>([]);
 
@@ -233,9 +275,28 @@ const EventGalleryComponent: React.FC<EventGalleryProps> = ({
         socketService.joinEvent(event.id);
 
         // Real-time media updates
+        // Real-time media updates
         socketService.on('media_uploaded', (newItem: MediaItem) => {
             console.log('EventGallery: Received media_uploaded event', newItem);
-            setLocalMedia(prev => [newItem, ...prev]);
+
+            // Helper to process URLs (same as in App.tsx)
+            const processUrl = (key: string) => {
+                if (!key) return '';
+                if (key.startsWith('/api/proxy-media') || key.startsWith('http')) return key;
+                return `/api/proxy-media?key=${encodeURIComponent(key)}`;
+            };
+
+            const processedItem = {
+                ...newItem,
+                url: processUrl(newItem.url),
+                previewUrl: newItem.previewUrl ? processUrl(newItem.previewUrl) : processUrl(newItem.url)
+            };
+
+            setLocalMedia(prev => {
+                // Prevent duplicates
+                if (prev.some(m => m.id === processedItem.id)) return prev;
+                return [processedItem, ...prev];
+            });
         });
 
         socketService.on('media_processed', (data: { id: string, previewUrl: string, url?: string }) => {
@@ -267,12 +328,21 @@ const EventGalleryComponent: React.FC<EventGalleryProps> = ({
             }));
         });
 
+        // Listen for user updates to refresh video permissions
+        const handleUserUpdate = (updatedUser: User) => {
+            console.log('EventGallery: Received user update', updatedUser);
+            // Force re-calculation of video permissions
+            setVideoPermissions(getVideoUploadUIState(currentUser, updatedUser.id === event.hostId ? updatedUser.tier : hostUser?.tier));
+        };
+        socketService.on('user_updated', handleUserUpdate);
+
         setIsMobile(isMobileDevice());
 
         return () => {
+            socketService.off('user_updated', handleUserUpdate);
             socketService.disconnect();
         };
-    }, [event.id]);
+    }, [event.id, currentUser, hostUser?.tier, event.hostId]);
 
     useEffect(() => {
         console.log('EventGallery: syncing localMedia with event.media:', event.media.length, 'items for event', event.id);
@@ -322,6 +392,21 @@ const EventGalleryComponent: React.FC<EventGalleryProps> = ({
         };
         loadModels();
     }, []);
+
+    // Update video permissions when user changes (real-time updates)
+    useEffect(() => {
+        setVideoPermissions(getVideoUploadUIState(currentUser, hostUser?.tier));
+    }, [currentUser, hostUser]);
+
+    // Update video permissions when coming back online
+    useEffect(() => {
+        const handleOnline = () => {
+            setVideoPermissions(getVideoUploadUIState(currentUser, hostUser?.tier));
+        };
+
+        window.addEventListener('online', handleOnline);
+        return () => window.removeEventListener('online', handleOnline);
+    }, [currentUser, hostUser]);
 
     const getDisplayMedia = () => {
         let media = filteredMedia || localMedia;
@@ -506,6 +591,40 @@ const EventGalleryComponent: React.FC<EventGalleryProps> = ({
             prompt(t('copyLink'), link);
         }
     }, [event.id, t]);
+
+    const handleMobileDownload = useCallback(async (mediaItem: MediaItem) => {
+        const filename = generateFilename(mediaItem.url, mediaItem.type, `snapify_${mediaItem.id}`);
+
+        // Show loading message
+        setDownloadStatus({ show: true, message: 'Preparing download...', type: 'info' });
+
+        try {
+            const result = await downloadMediaForMobile(mediaItem.url, filename);
+
+            if (result.success) {
+                setDownloadStatus({
+                    show: true,
+                    message: isMobile ? 'Media shared! Check your gallery.' : 'Download completed!',
+                    type: 'success'
+                });
+            } else {
+                setDownloadStatus({
+                    show: true,
+                    message: result.message || 'Download failed. Try again.',
+                    type: 'error'
+                });
+            }
+        } catch (error) {
+            setDownloadStatus({
+                show: true,
+                message: 'Download failed. Please try again.',
+                type: 'error'
+            });
+        }
+
+        // Hide toast after 3 seconds
+        setTimeout(() => setDownloadStatus(null), 3000);
+    }, [isMobile]);
 
     const handleUnlock = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -756,7 +875,44 @@ const EventGalleryComponent: React.FC<EventGalleryProps> = ({
     }
 
     return (
-        <main className="max-w-5xl mx-auto px-4 py-8 pb-32">
+        <main
+            className="max-w-5xl mx-auto px-4 py-8 pb-32"
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
+            style={{
+                transform: pullDistance > 0 ? `translateY(${Math.min(pullDistance, PULL_THRESHOLD)}px)` : undefined,
+                transition: isRefreshing ? 'transform 0.3s ease-out' : undefined
+            }}
+        >
+            {/* Pull to Refresh Indicator */}
+            {pullDistance > 0 && (
+                <div
+                    className="fixed top-0 left-0 right-0 z-50 bg-indigo-600 text-white text-center py-2 text-sm font-medium transition-opacity"
+                    style={{
+                        opacity: Math.min(pullDistance / PULL_THRESHOLD, 1),
+                        transform: `translateY(${Math.max(0, pullDistance - PULL_THRESHOLD)}px)`
+                    }}
+                >
+                    {isRefreshing ? (
+                        <div className="flex items-center justify-center gap-2">
+                            <Loader2 className="animate-spin h-4 w-4" />
+                            Refreshing...
+                        </div>
+                    ) : pullDistance > PULL_THRESHOLD ? (
+                        <div className="flex items-center justify-center gap-2">
+                            <ArrowDown className="h-4 w-4" />
+                            Release to refresh
+                        </div>
+                    ) : (
+                        <div className="flex items-center justify-center gap-2">
+                            <ArrowDown className="h-4 w-4" />
+                            Pull to refresh
+                        </div>
+                    )}
+                </div>
+            )}
+
             {isEventExpired && currentUser?.role === UserRole.ADMIN && (
                 <div className="bg-red-50 border border-red-100 text-red-700 p-4 rounded-xl mb-6 flex items-center font-bold">
                     <ShieldCheck className="mr-2" /> {t('adminModeExpired')}
@@ -870,7 +1026,7 @@ const EventGalleryComponent: React.FC<EventGalleryProps> = ({
                             {displayMedia.length > 0 && !isBulkDeleteMode && (
                                 <button onClick={() => { openLightbox(0); setIsSlideshowPlaying(true); }} className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl hover:bg-slate-800 font-bold text-sm"><Play size={16} /> <span className="hidden sm:inline">{t('slideshow')}</span></button>
                             )}
-                            {displayMedia.length > 0 && !isBulkDeleteMode && (
+                            {(isOwner || currentUser?.role === UserRole.ADMIN) && displayMedia.length > 0 && !isBulkDeleteMode && (
                                 <button onClick={() => onDownloadAll(localMedia)} disabled={downloadingZip} className="p-2 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-xl transition-colors disabled:opacity-50" title={t('downloadAll')}>
                                     {downloadingZip ? <Loader2 size={20} className="animate-spin" /> : <Download size={20} />}
                                 </button>
@@ -973,20 +1129,68 @@ const EventGalleryComponent: React.FC<EventGalleryProps> = ({
             )
             }
 
+            {/* Video Upload Restriction Banner */}
+            {videoPermissions.upgradePrompt && !videoPermissions.enabled && (
+                <div className="fixed bottom-[calc(6rem+env(safe-area-inset-bottom))] left-4 right-4 z-30">
+                    <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-xl p-3 shadow-lg">
+                        <div className="flex items-center gap-3">
+                            <div className="flex-shrink-0">
+                                <Video className="h-5 w-5 text-amber-600" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium text-amber-800">
+                                    Video uploads available on Pro plan
+                                </p>
+                                <p className="text-xs text-amber-700 mt-0.5">
+                                    Upgrade to unlock 4K video uploads and advanced features
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => window.open('/pricing', '_blank')}
+                                className="flex-shrink-0 bg-amber-600 text-white px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-amber-700 transition-colors"
+                            >
+                                Upgrade
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* UPDATED: Safe area bottom spacing for the fixed bar */}
-            <div className="fixed bottom-[calc(2rem+env(safe-area-inset-bottom))] left-0 right-0 flex justify-center z-40 pointer-events-auto">
+            <div className={`fixed bottom-[calc(2rem+env(safe-area-inset-bottom))] left-0 right-0 flex justify-center z-40 pointer-events-auto ${videoPermissions.upgradePrompt && !videoPermissions.enabled ? 'bottom-[calc(8rem+env(safe-area-inset-bottom))]' : ''}`}>
                 {/* Revised Action Island */}
                 <div className="flex items-center gap-4 p-2 pr-3 pl-3 bg-black/80 backdrop-blur-xl rounded-full shadow-2xl border border-white/10 text-white">
                     {/* Camera Button (Mobile) */}
                     {isMobile && (
-                        <button onClick={() => onUpload('camera')} className="flex flex-col items-center justify-center w-12 h-12 rounded-full bg-white text-black shadow-lg active:scale-95 transition-transform">
+                        <button
+                            onClick={() => onUpload('camera')}
+                            className="flex flex-col items-center justify-center w-12 h-12 rounded-full bg-white text-black shadow-lg active:scale-95 transition-transform"
+                            title={videoPermissions.enabled ? 'Take photo' : videoPermissions.message}
+                        >
                             <Camera size={24} />
                         </button>
                     )}
 
                     {/* Upload Button */}
-                    <button onClick={() => onUpload('upload')} className={`flex flex-col items-center justify-center w-12 h-12 rounded-full transition-colors ${isMobile ? 'bg-white/10 hover:bg-white/20' : 'bg-white text-black shadow-lg hover:bg-slate-100'}`}>
-                        <ImagePlus size={24} />
+                    <button
+                        onClick={() => onUpload('upload')}
+                        className={`flex flex-col items-center justify-center w-12 h-12 rounded-full transition-colors ${videoPermissions.enabled
+                            ? (isMobile ? 'bg-white/10 hover:bg-white/20' : 'bg-white text-black shadow-lg hover:bg-slate-100')
+                            : 'bg-gray-500/50 cursor-not-allowed'
+                            }`}
+                        title={videoPermissions.enabled ? 'Upload media' : videoPermissions.message}
+                        disabled={!videoPermissions.enabled && !videoPermissions.visible}
+                    >
+                        {videoPermissions.enabled ? (
+                            <ImagePlus size={24} />
+                        ) : (
+                            <div className="relative">
+                                <ImagePlus size={24} />
+                                <div className="absolute -top-1 -right-1 w-3 h-3 bg-amber-400 rounded-full flex items-center justify-center">
+                                    <span className="text-xs font-bold text-black">★</span>
+                                </div>
+                            </div>
+                        )}
                     </button>
 
                     <div className="w-px h-8 bg-white/20" />
@@ -1020,7 +1224,6 @@ const EventGalleryComponent: React.FC<EventGalleryProps> = ({
                             <div className="text-white/80 text-sm font-medium">{lightboxIndex + 1} / {displayMedia.length}</div>
                             <div className="flex gap-3">
                                 <button onClick={() => setIsSlideshowPlaying(!isSlideshowPlaying)} className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors">{isSlideshowPlaying ? <Pause size={20} /> : <Play size={20} />}</button>
-                                <button onClick={() => { const link = document.createElement('a'); link.href = displayMedia[lightboxIndex].url; link.download = `snapify_${displayMedia[lightboxIndex].id}`; link.click(); }} className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors"><Download size={20} /></button>
                                 <button onClick={closeLightbox} className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors"><X size={20} /></button>
                             </div>
                         </div>
@@ -1049,9 +1252,20 @@ const EventGalleryComponent: React.FC<EventGalleryProps> = ({
                                                     src={item.url}
                                                     controls
                                                     autoPlay={offset === 0 && isSlideshowPlaying}
-                                                    className="max-w-full max-h-full rounded-lg shadow-2xl object-contain bg-black pointer-events-none" // pointer-events-none is KEY here
+                                                    className="max-w-full max-h-full rounded-lg shadow-2xl object-contain bg-black"
                                                     playsInline
-                                                    muted
+                                                    muted={isSlideshowPlaying}
+                                                    onClick={(e) => e.stopPropagation()}
+                                                    onError={(e) => {
+                                                        console.error('Video failed to load in lightbox:', item.url);
+                                                    }}
+                                                    style={{
+                                                        pointerEvents: 'auto',
+                                                        width: 'auto',
+                                                        height: 'auto',
+                                                        maxWidth: '100%',
+                                                        maxHeight: '100%'
+                                                    }}
                                                 />
                                             ) : (
                                                 <img
@@ -1111,6 +1325,45 @@ const EventGalleryComponent: React.FC<EventGalleryProps> = ({
                     </div>
                 )
             }
+
+            {/* Download Status Toast */}
+            {downloadStatus?.show && (
+                <div className="fixed top-4 left-4 right-4 z-50 md:left-auto md:right-4 md:w-96">
+                    <div className={`p-4 rounded-lg shadow-lg border backdrop-blur-md ${downloadStatus.type === 'success' ? 'bg-green-50 border-green-200 text-green-800' :
+                        downloadStatus.type === 'error' ? 'bg-red-50 border-red-200 text-red-800' :
+                            'bg-blue-50 border-blue-200 text-blue-800'
+                        }`}>
+                        <div className="flex items-center">
+                            <div className="flex-shrink-0">
+                                {downloadStatus.type === 'success' && (
+                                    <svg className="h-5 w-5 text-green-400" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                                    </svg>
+                                )}
+                                {downloadStatus.type === 'error' && (
+                                    <svg className="h-5 w-5 text-red-400" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                                    </svg>
+                                )}
+                                {downloadStatus.type === 'info' && (
+                                    <Loader2 className="h-5 w-5 text-blue-400 animate-spin" />
+                                )}
+                            </div>
+                            <div className="ml-3">
+                                <p className="text-sm font-medium">{downloadStatus.message}</p>
+                            </div>
+                            <div className="ml-auto pl-3">
+                                <button
+                                    onClick={() => setDownloadStatus(null)}
+                                    className="inline-flex rounded-md p-1.5 focus:outline-none focus:ring-2 focus:ring-offset-2 hover:bg-black/10"
+                                >
+                                    <X className="h-4 w-4" />
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {showShareModal && <ShareModal eventId={event.id} eventTitle={event.title} onClose={() => setShowShareModal(false)} t={t} />}
         </main >

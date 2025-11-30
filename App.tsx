@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, Suspense, lazy } from 'react';
+import React, { useState, useEffect, useRef, Suspense, lazy, useCallback } from 'react';
 // @ts-ignore
 import JSZip from 'jszip';
 // @ts-ignore
@@ -31,11 +31,12 @@ import { clearDeviceFingerprint } from './utils/deviceFingerprint';
 import { socketService } from './services/socketService';
 import { validateGuestName, sanitizeInput, validateEmail, validatePassword, validateEventTitle, validateEventDescription } from './utils/validation';
 import { clearAllCaches } from './utils/cacheManager';
+import { canUploadVideos } from './utils/videoPermissions';
 
 // @ts-ignore
 const env: any = (import.meta as any).env || {};
 
-const API_URL = import.meta.env.DEV ? (import.meta.env.VITE_API_URL || 'http://localhost:3001') : '';
+const API_URL = env.DEV ? (env.VITE_API_URL || 'http://localhost:3001') : '';
 
 // Using imported validation functions from utils/validation.ts
 
@@ -89,6 +90,18 @@ export default function App() {
   const [adminStatus, setAdminStatus] = useState<{ adminId: string, online: boolean, lastSeen: number }[]>([]);
   const [showSupportChat, setShowSupportChat] = useState(false);
 
+  const [fetchedHostUsers, setFetchedHostUsers] = useState<Record<string, User>>({});
+
+  const fetchHostUser = useCallback(async (hostId: string) => {
+    if (fetchedHostUsers[hostId] || currentUser?.id === hostId) return;
+    try {
+      const user = await api.fetchUser(hostId);
+      setFetchedHostUsers(prev => ({ ...prev, [hostId]: user }));
+    } catch (error) {
+      console.warn('Failed to fetch host user:', error);
+    }
+  }, [fetchedHostUsers, currentUser?.id]);
+
   // Mobile-specific state for file input management
   const [fileInputKey, setFileInputKey] = useState('file-input-v1');
   const [cameraInputKey, setCameraInputKey] = useState('camera-input-v1');
@@ -111,6 +124,20 @@ export default function App() {
       }
     };
 
+    // Handle online/offline transitions for data sync
+    const handleOnline = async () => {
+      console.log('User came back online, re-syncing data...');
+      // Re-sync user data when coming back online
+      if (currentUser?.id) {
+        try {
+          // This will trigger a re-fetch of user data if needed
+          await loadInitialData();
+        } catch (error) {
+          console.warn('Failed to re-sync data on reconnect:', error);
+        }
+      }
+    };
+
     // Connect initially if page is visible
     if (!document.hidden) {
       const token = localStorage.getItem('snapify_token');
@@ -118,6 +145,7 @@ export default function App() {
     }
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('online', handleOnline);
 
     let lastReloadTime = 0;
     const handleForceReload = async () => {
@@ -200,25 +228,25 @@ export default function App() {
 
     // MEDIA UPLOAD REAL-TIME UPDATES
     const handleMediaUploaded = (newItem: MediaItem) => {
-        console.log('App: Received media_uploaded event for event', newItem.eventId);
-        setEvents(prev => prev.map(event => {
-            if (event.id === newItem.eventId) {
-                console.log('App: Adding media to event', event.id, 'current media count:', event.media.length);
-                // Add new media item to the event with proper URLs
-                const processedItem = {
-                    ...newItem,
-                    url: buildProxyUrl(newItem.url),
-                    previewUrl: newItem.previewUrl ? buildProxyUrl(newItem.previewUrl) : buildProxyUrl(newItem.url)
-                };
-                const updatedEvent = {
-                    ...event,
-                    media: [processedItem, ...event.media]
-                };
-                console.log('App: Updated event media count:', updatedEvent.media.length);
-                return updatedEvent;
-            }
-            return event;
-        }));
+      console.log('App: Received media_uploaded event for event', newItem.eventId);
+      setEvents(prev => prev.map(event => {
+        if (event.id === newItem.eventId) {
+          console.log('App: Adding media to event', event.id, 'current media count:', event.media.length);
+          // Add new media item to the event with proper URLs
+          const processedItem = {
+            ...newItem,
+            url: buildProxyUrl(newItem.url),
+            previewUrl: newItem.previewUrl ? buildProxyUrl(newItem.previewUrl) : buildProxyUrl(newItem.url)
+          };
+          const updatedEvent = {
+            ...event,
+            media: [processedItem, ...event.media]
+          };
+          console.log('App: Updated event media count:', updatedEvent.media.length);
+          return updatedEvent;
+        }
+        return event;
+      }));
     };
 
     const handleMediaProcessed = (data: { id: string, previewUrl: string, url?: string }) => {
@@ -269,6 +297,7 @@ export default function App() {
 
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('online', handleOnline);
       socketService.off('force_client_reload', handleForceReload);
       socketService.off('admin_status_update', handleAdminStatusUpdate);
       socketService.off('cache_invalidate', handleCacheInvalidate);
@@ -280,18 +309,31 @@ export default function App() {
   useEffect(() => {
     if (currentUser?.id) {
       const handleUserUpdate = (updatedUser: User) => {
+        console.log('Real-time user update received:', updatedUser);
         if (updatedUser.id === currentUser.id) {
+          // Update current user and persist to localStorage
           setCurrentUser(prev => {
             if (!prev) return null;
-            return { ...prev, ...updatedUser };
+            const updated = { ...prev, ...updatedUser };
+            localStorage.setItem('snapify_user_obj', JSON.stringify(updated));
+            return updated;
           });
         }
+        // Update in allUsers array for admin views
         setAllUsers(prev => prev.map(u => u.id === updatedUser.id ? { ...u, ...updatedUser } : u));
+        // Also update fetchedHostUsers if this user is cached there
+        setFetchedHostUsers(prev => {
+          if (prev[updatedUser.id]) {
+            return { ...prev, [updatedUser.id]: updatedUser };
+          }
+          return prev;
+        });
       };
       socketService.on('user_updated', handleUserUpdate);
       return () => { socketService.off('user_updated', handleUserUpdate); };
     }
   }, [currentUser?.id]);
+
 
   const loadInitialData = async () => {
     try {
@@ -452,8 +494,15 @@ export default function App() {
   const activeEvent = events.find(e => e.id === currentEventId);
   const isOwner = currentUser && activeEvent && currentUser.id === activeEvent.hostId;
   const isEventExpired = activeEvent?.expiresAt ? new Date() > new Date(activeEvent.expiresAt) : false;
-  const hostUser = allUsers.find(u => u.id === activeEvent?.hostId) || (currentUser?.id === activeEvent?.hostId ? currentUser : undefined);
+  // Use event.hostUser if available (from API), otherwise fall back to allUsers lookup
+  const hostUser = activeEvent?.hostUser || allUsers.find(u => u.id === activeEvent?.hostId) || fetchedHostUsers[activeEvent?.hostId || ''] || (currentUser?.id === activeEvent?.hostId ? currentUser : undefined);
   const isHostPhotographer = hostUser?.role === UserRole.PHOTOGRAPHER;
+
+  useEffect(() => {
+    if (activeEvent?.hostId && !allUsers.find(u => u.id === activeEvent.hostId) && activeEvent.hostId !== currentUser?.id) {
+      fetchHostUser(activeEvent.hostId);
+    }
+  }, [activeEvent?.hostId, allUsers, currentUser?.id, fetchHostUser]);
 
   const handleEmailAuth = async (data: any, isSignUp: boolean) => {
     if (isLoggingIn) return;
@@ -689,6 +738,7 @@ export default function App() {
 
     const type = file.type.startsWith('video') ? 'video' : 'image';
     const url = URL.createObjectURL(file);
+    console.log('Setting preview media:', { type, url, hasFile: !!file });
     setPreviewMedia({ type, src: url, file });
 
     // Reset input immediately for mobile devices to allow re-selection
@@ -697,36 +747,38 @@ export default function App() {
     }, 100);
   };
 
+  const refreshCurrentEvent = async () => {
+    if (!currentEventId) return;
+
+    console.log('Pull-to-refresh: Refreshing current event', currentEventId);
+
+    try {
+      // Ensure WebSocket connection is active (especially important on mobile)
+      const token = localStorage.getItem('snapify_token');
+      socketService.connect(token || undefined);
+
+      // Re-join the event room to ensure we receive updates
+      socketService.joinEvent(currentEventId);
+
+      const updatedEvent = await api.fetchEventById(currentEventId);
+      setEvents(prev => prev.map(e => e.id === currentEventId ? updatedEvent : e));
+
+      console.log('Pull-to-refresh: Successfully refreshed event with', updatedEvent.media.length, 'media items');
+    } catch (err) {
+      console.error('Pull-to-refresh: Failed to refresh event:', err);
+      // On mobile, if WebSocket fails, we still have the HTTP fallback
+    }
+  };
+
   const confirmUpload = async (userCaption: string, userPrivacy: 'public' | 'private', rotation: number = 0) => {
-    if (!activeEvent || !previewMedia) return;
+    if (!previewMedia || !previewMedia.file) return;
+
     setIsUploading(true);
     setUploadProgress(0);
 
     try {
       const { type, src, file } = previewMedia;
       const uploader = currentUser ? (TIER_CONFIG[currentUser.tier].allowBranding && currentUser.studioName ? currentUser.studioName : currentUser.name) : guestName || "Guest";
-
-      if (type === 'video') {
-        let config;
-        if (currentUser && activeEvent.hostId === currentUser.id) {
-          config = getTierConfigForUser(currentUser);
-        } else if (activeEvent.hostTier) {
-          config = getTierConfig(activeEvent.hostTier);
-        } else {
-          config = TIER_CONFIG[TierLevel.FREE];
-        }
-        if (!config.allowVideo) {
-          alert(t('videoRestricted'));
-          setIsUploading(false);
-          return;
-        }
-      }
-
-      // NOTE: Client-side check only for UX. Real quota check is on server.
-      const fileSizeMb = file ? file.size / (1024 * 1024) : 0;
-      if (currentUser && currentUser.storageLimitMb !== -1 && (currentUser.storageUsedMb + fileSizeMb > currentUser.storageLimitMb)) {
-        // Warning only, server will enforce
-      }
 
       let finalCaption = userCaption;
       if (!finalCaption && type === 'image') {
@@ -739,6 +791,7 @@ export default function App() {
           finalCaption = 'Captured moment'; // Fallback caption
         }
       }
+
       const config = currentUser ? getTierConfigForUser(currentUser) : TIER_CONFIG[TierLevel.FREE];
       const canWatermark = currentUser?.role === UserRole.PHOTOGRAPHER && config.allowWatermark;
       const canUseBranding = currentUser ? TIER_CONFIG[currentUser.tier].allowBranding : false;
@@ -784,9 +837,10 @@ export default function App() {
           ctx.drawImage(img, -img.width / 2, -img.height / 2);
           ctx.restore();
 
-          const rotatedBlob = await new Promise<Blob>(resolve => {
-            canvas.toBlob(resolve, 'image/jpeg', 0.85);
+          const rotatedBlob = await new Promise<Blob | null>(resolve => {
+            canvas.toBlob(blob => resolve(blob), 'image/jpeg', 0.85);
           });
+          if (!rotatedBlob) throw new Error('Failed to create rotated blob');
           uploadFile = new File([rotatedBlob], "final.jpg", { type: "image/jpeg" });
         }
       }
@@ -811,7 +865,7 @@ export default function App() {
           fileName: uploadFile.name,
           metadata
         });
-        await api.uploadMedia(uploadFile, metadata, activeEvent.id, (percent) => {
+        await api.uploadMedia(uploadFile, metadata, activeEvent!.id, (percent) => {
           setUploadProgress(percent);
         });
       }
@@ -994,7 +1048,7 @@ export default function App() {
       <div className="flex-shrink-0 z-50 w-full bg-slate-50/95 backdrop-blur-md border-b border-slate-200">
         <Suspense fallback={<div className="h-16 bg-slate-50/95"></div>}>
           <Navigation
-            currentUser={currentUser}
+            currentUser={currentUser || null}
             guestName={guestName}
             view={view}
             currentEventTitle={activeEvent?.title || ''}
@@ -1089,11 +1143,12 @@ export default function App() {
                     downloadingZip={downloadingZip}
                     applyWatermark={applyWatermarkState}
                     setApplyWatermark={setApplyWatermarkState}
-                    onDownloadAll={(media) => downloadEventZip({ ...activeEvent, media: media || activeEvent.media })}
                     onSetCover={handleSetCoverImage}
                     onUpload={initiateMediaAction}
+                    onDownloadAll={(media) => downloadEventZip({ ...activeEvent, media: media || activeEvent.media })}
                     onLike={handleLikeMedia}
                     onOpenLiveSlideshow={() => setView('live')}
+                    onRefresh={refreshCurrentEvent}
                     t={t}
                   />
                 </Suspense>
@@ -1117,7 +1172,7 @@ export default function App() {
 
       <PWAInstallPrompt t={t} />
 
-      <input key={fileInputKey} id="file-upload-input" name="file-upload" type="file" ref={fileInputRef} className="hidden" accept="image/*,video/*" onChange={handleFileUpload} autoComplete="off" />
+      <input key={fileInputKey} id="file-upload-input" name="file-upload" type="file" ref={fileInputRef} className="hidden" accept={canUploadVideos(currentUser, activeEvent?.hostTier).allowed ? "image/*,video/*" : "image/*"} onChange={handleFileUpload} autoComplete="off" />
       <input key={cameraInputKey} id="camera-upload-input" name="camera-upload" type="file" ref={cameraInputRef} className="hidden" accept="image/*" capture="environment" onChange={handleFileUpload} autoComplete="off" />
 
       {previewMedia && (

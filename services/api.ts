@@ -73,6 +73,12 @@ export const api = {
         await fetch(`${API_URL}/api/users/${id}`, { method: 'DELETE', headers: { ...getAuthHeaders() } });
     },
 
+    fetchUser: async (id: string): Promise<User> => {
+        const res = await fetch(`${API_URL}/api/users/${id}`, { headers: { ...getAuthHeaders() } });
+        if (!res.ok) throw new Error('Failed to fetch user');
+        return res.json();
+    },
+
     // --- EVENTS ---
     fetchEvents: async (): Promise<Event[]> => {
         const res = await fetch(`${API_URL}/api/events?_t=${Date.now()}`, { headers: { ...getAuthHeaders() } });
