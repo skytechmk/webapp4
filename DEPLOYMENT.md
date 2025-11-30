@@ -224,23 +224,30 @@ sudo certbot renew --dry-run
 
 ### 5. DNS Configuration
 
-Update your DNS records:
+Update your DNS records for both domains:
 - **A Record:** `snapify.skytech.mk` → `YOUR_SERVER_IP`
-- **AAAA Record:** (optional, for IPv6)
+- **A Record:** `snapify.mk` → `YOUR_SERVER_IP`
+- **AAAA Record:** (optional, for IPv6 on both domains)
 
 ## 🔍 Testing & Verification
 
 ### Health Checks
 
 ```bash
-# Test application health
+# Test application health (both domains)
 curl -f https://snapify.skytech.mk/health
+curl -f https://snapify.mk/health
 
-# Test API endpoints
+# Test API endpoints (both domains)
 curl -f https://snapify.skytech.mk/api/health
+curl -f https://snapify.mk/api/health
 
-# Test admin login
+# Test admin login (both domains)
 curl -X POST https://snapify.skytech.mk/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@skytech.mk","password":"your_password"}'
+
+curl -X POST https://snapify.mk/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"admin@skytech.mk","password":"your_password"}'
 ```
@@ -499,4 +506,6 @@ After deployment, monitor these KPIs:
 
 **Deployment completed successfully!** 🎉
 
-Your SnapifY application is now live and ready to serve clients at `https://snapify.skytech.mk`
+Your SnapifY application is now live and ready to serve clients at:
+- `https://snapify.skytech.mk`
+- `https://snapify.mk`

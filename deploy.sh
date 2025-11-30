@@ -19,7 +19,8 @@ NC='\033[0m' # No Color
 PROJECT_DIR="/var/www/snapify"
 BACKUP_DIR="/var/www/backups"
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-DOMAIN="snapify.skytech.mk"
+DOMAIN="snapify.skytech.mk"  # Primary domain
+ALT_DOMAIN="snapify.mk"      # Alternative domain
 
 # Function to print colored output
 print_status() {
@@ -297,7 +298,8 @@ display_status() {
     echo "🌐 Application URLs:"
     echo "  - Local: http://localhost:3001"
     echo "  - Nginx: http://localhost"
-    echo "  - Domain: https://$DOMAIN (after DNS setup)"
+    echo "  - Primary Domain: https://$DOMAIN (after DNS setup)"
+    echo "  - Alternative Domain: https://$ALT_DOMAIN (after DNS setup)"
     echo ""
 
     # Next steps
@@ -305,9 +307,9 @@ display_status() {
     echo "1. ✅ Configure environment variables in .env file"
     echo "2. ✅ Set up Redis password (optional but recommended)"
     echo "3. ✅ Configure Sentry DSN for error monitoring"
-    echo "4. 🔄 Update DNS to point $DOMAIN to your server IP"
-    echo "5. 🔄 Configure Cloudflare SSL settings"
-    echo "6. 🔄 Test the application at https://$DOMAIN"
+    echo "4. 🔄 Update DNS to point $DOMAIN and $ALT_DOMAIN to your server IP"
+    echo "5. 🔄 Configure Cloudflare SSL settings for both domains"
+    echo "6. 🔄 Test the application at https://$DOMAIN and https://$ALT_DOMAIN"
     echo ""
 
     # Useful commands
