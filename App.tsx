@@ -32,6 +32,8 @@ import { socketService } from './services/socketService';
 import { validateGuestName, sanitizeInput, validateEmail, validatePassword, validateEventTitle, validateEventDescription } from './utils/validation';
 import { clearAllCaches } from './utils/cacheManager';
 import { canUploadVideos } from './utils/videoPermissions';
+import { Skeleton, SkeletonGrid, SkeletonCard } from './components/Skeleton';
+import { ToastProvider } from './components/Toast';
 
 // @ts-ignore
 const env: any = (import.meta as any).env || {};
@@ -1033,141 +1035,178 @@ export default function App() {
     </div>
   );
 
-  return (
-    <div className="h-[100dvh] w-full flex flex-col bg-slate-50">
-      <Suspense fallback={<LoadingSpinner />}>
-        <OfflineBanner t={t} />
-      </Suspense>
-      <Suspense fallback={null}>
-        <ShareTargetHandler onShareReceive={handleIncomingShare} />
-      </Suspense>
-      <Suspense fallback={null}>
-        <ReloadPrompt />
-      </Suspense>
+  // Skeleton loading for dashboard
+  const DashboardSkeleton = () => (
+    <main className="max-w-5xl mx-auto px-4 py-8">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+        <div className="space-y-2">
+          <Skeleton variant="text" className="h-8 w-64" />
+          <Skeleton variant="text" className="h-4 w-48" />
+        </div>
+        <div className="flex gap-3">
+          <Skeleton variant="rectangular" className="h-10 w-32" />
+          <Skeleton variant="rectangular" className="h-10 w-24" />
+        </div>
+      </div>
+      <div className="flex items-center gap-1 bg-white p-1 rounded-xl shadow-sm border border-slate-200 mb-6">
+        <Skeleton variant="rectangular" className="h-10 w-20" />
+        <Skeleton variant="rectangular" className="h-10 w-20" />
+      </div>
+      <SkeletonGrid count={3} />
+    </main>
+  );
 
-      <div className="flex-shrink-0 z-50 w-full bg-slate-50/95 backdrop-blur-md border-b border-slate-200">
-        <Suspense fallback={<div className="h-16 bg-slate-50/95"></div>}>
-          <Navigation
-            currentUser={currentUser || null}
-            guestName={guestName}
-            view={view}
-            currentEventTitle={activeEvent?.title || ''}
-            language={language}
-            onChangeLanguage={changeLanguage}
-            onLogout={handleLogout}
-            onSignIn={handleSignInRequest}
-            onHome={() => {
-              setCurrentEventId(null);
-              if (currentUser) setView(currentUser.role === UserRole.ADMIN ? 'admin' : 'dashboard');
-              else setView('landing');
-            }}
-            onBack={handleBack}
-            onToAdmin={() => setView('admin')}
-            onOpenSettings={() => setShowStudioSettings(true)}
-            t={t}
-          />
+  return (
+    <ToastProvider>
+      <div className="h-[100dvh] w-full flex flex-col bg-slate-50">
+        {/* Skip Links for Accessibility */}
+        <a
+          href="#main-content"
+          className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 bg-indigo-600 text-white px-4 py-2 rounded-md z-50 font-medium shadow-lg"
+        >
+          Skip to main content
+        </a>
+        <a
+          href="#navigation"
+          className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-48 bg-indigo-600 text-white px-4 py-2 rounded-md z-50 font-medium shadow-lg"
+        >
+          Skip to navigation
+        </a>
+
+        <Suspense fallback={<LoadingSpinner />}>
+          <OfflineBanner t={t} />
+        </Suspense>
+        <Suspense fallback={null}>
+          <ShareTargetHandler onShareReceive={handleIncomingShare} />
+        </Suspense>
+        <Suspense fallback={null}>
+          <ReloadPrompt />
         </Suspense>
 
-
-      </div>
-
-      <div className="flex-1 overflow-y-auto overflow-x-hidden scroll-smooth w-full relative no-scrollbar">
-        {view === 'landing' ? (
-          <div className="min-h-full w-full">
-            <Suspense fallback={<LoadingSpinner />}>
-              <LandingPage
-                onGoogleLogin={() => { if (window.google) window.google.accounts.id.prompt(); }}
-                onEmailAuth={handleEmailAuth}
-                onContactSales={(tier?: TierLevel) => { setSelectedTier(tier); setShowContactModal(true); }}
-                isLoggingIn={isLoggingIn}
-                authError={authError}
-                language={language}
-                onChangeLanguage={changeLanguage}
-                t={t}
-              />
-            </Suspense>
-            <Suspense fallback={null}>
-              <PWAInstallPrompt t={t} />
-            </Suspense>
-            {showContactModal && (
-              <Suspense fallback={null}>
-                <ContactModal onClose={() => { setShowContactModal(false); setSelectedTier(undefined); }} t={t} tier={selectedTier} />
-              </Suspense>
-            )}
-          </div>
-        ) : (
-          <div className="flex flex-col min-h-full">
-            <div className="flex-1 pb-32">
-              {view === 'admin' && currentUser?.role === UserRole.ADMIN && (
-                <Suspense fallback={<LoadingSpinner />}>
-                  <AdminDashboard
-                    users={allUsers}
-                    events={events}
-                    onClose={() => setView('dashboard')}
-                    onLogout={handleLogout}
-                    onDeleteUser={async (id) => { await api.deleteUser(id); setAllUsers(prev => prev.filter(u => u.id !== id)); }}
-                    onDeleteEvent={handleDeleteEvent}
-                    onDeleteMedia={handleDeleteMedia}
-                    onUpdateEvent={handleUpdateEvent}
-                    onUpdateUser={handleUpdateUser}
-                    onNewEvent={() => setShowCreateModal(true)}
-                    onDownloadEvent={downloadEventZip}
-                    t={t}
-                  />
-                </Suspense>
-              )}
-
-              {view === 'dashboard' && currentUser && (
-                <Suspense fallback={<LoadingSpinner />}>
-                  <UserDashboard
-                    events={events}
-                    currentUser={currentUser}
-                    onNewEvent={() => setShowCreateModal(true)}
-                    onSelectEvent={(id) => { setCurrentEventId(id); setView('event'); }}
-                    onRequestUpgrade={() => setShowContactModal(true)}
-                    t={t}
-                  />
-                </Suspense>
-              )}
-
-              {view === 'event' && activeEvent && (
-                <Suspense fallback={<LoadingSpinner />}>
-                  <EventGallery
-                    key={activeEvent.id}
-                    event={activeEvent}
-                    currentUser={currentUser}
-                    hostUser={hostUser}
-                    isEventExpired={isEventExpired}
-                    isOwner={Boolean(isOwner)}
-                    isHostPhotographer={Boolean(isHostPhotographer)}
-                    downloadingZip={downloadingZip}
-                    applyWatermark={applyWatermarkState}
-                    setApplyWatermark={setApplyWatermarkState}
-                    onSetCover={handleSetCoverImage}
-                    onUpload={initiateMediaAction}
-                    onDownloadAll={(media) => downloadEventZip({ ...activeEvent, media: media || activeEvent.media })}
-                    onLike={handleLikeMedia}
-                    onOpenLiveSlideshow={() => setView('live')}
-                    onRefresh={refreshCurrentEvent}
-                    t={t}
-                  />
-                </Suspense>
-              )}
-            </div>
-          </div>
-        )}
-
-        {view === 'live' && activeEvent && (
-          <Suspense fallback={<LoadingSpinner />}>
-            <LiveSlideshow
-              event={activeEvent}
-              currentUser={currentUser}
-              hostUser={hostUser}
-              onClose={() => setView('event')}
+        <div id="navigation" className="flex-shrink-0 z-50 w-full bg-slate-50/95 backdrop-blur-md border-b border-slate-200">
+          <Suspense fallback={<div className="h-16 bg-slate-50/95"></div>}>
+            <Navigation
+              currentUser={currentUser || null}
+              guestName={guestName}
+              view={view}
+              currentEventTitle={activeEvent?.title || ''}
+              language={language}
+              onChangeLanguage={changeLanguage}
+              onLogout={handleLogout}
+              onSignIn={handleSignInRequest}
+              onHome={() => {
+                setCurrentEventId(null);
+                if (currentUser) setView(currentUser.role === UserRole.ADMIN ? 'admin' : 'dashboard');
+                else setView('landing');
+              }}
+              onBack={handleBack}
+              onToAdmin={() => setView('admin')}
+              onOpenSettings={() => setShowStudioSettings(true)}
               t={t}
             />
           </Suspense>
-        )}
+
+
+        </div>
+
+        <main id="main-content" className="flex-1 overflow-y-auto overflow-x-hidden scroll-smooth w-full relative no-scrollbar">
+          {view === 'landing' ? (
+            <div className="min-h-full w-full">
+              <Suspense fallback={<LoadingSpinner />}>
+                <LandingPage
+                  onGoogleLogin={() => { if (window.google) window.google.accounts.id.prompt(); }}
+                  onEmailAuth={handleEmailAuth}
+                  onContactSales={(tier?: TierLevel) => { setSelectedTier(tier); setShowContactModal(true); }}
+                  isLoggingIn={isLoggingIn}
+                  authError={authError}
+                  language={language}
+                  onChangeLanguage={changeLanguage}
+                  t={t}
+                />
+              </Suspense>
+              <Suspense fallback={null}>
+                <PWAInstallPrompt t={t} />
+              </Suspense>
+              {showContactModal && (
+                <Suspense fallback={null}>
+                  <ContactModal onClose={() => { setShowContactModal(false); setSelectedTier(undefined); }} t={t} tier={selectedTier} />
+                </Suspense>
+              )}
+            </div>
+          ) : (
+            <div className="flex flex-col min-h-full">
+              <div className="flex-1 pb-32">
+                {view === 'admin' && currentUser?.role === UserRole.ADMIN && (
+                  <Suspense fallback={<LoadingSpinner />}>
+                    <AdminDashboard
+                      users={allUsers}
+                      events={events}
+                      onClose={() => setView('dashboard')}
+                      onLogout={handleLogout}
+                      onDeleteUser={async (id) => { await api.deleteUser(id); setAllUsers(prev => prev.filter(u => u.id !== id)); }}
+                      onDeleteEvent={handleDeleteEvent}
+                      onDeleteMedia={handleDeleteMedia}
+                      onUpdateEvent={handleUpdateEvent}
+                      onUpdateUser={handleUpdateUser}
+                      onNewEvent={() => setShowCreateModal(true)}
+                      onDownloadEvent={downloadEventZip}
+                      t={t}
+                    />
+                  </Suspense>
+                )}
+
+                {view === 'dashboard' && currentUser && (
+                  <Suspense fallback={<DashboardSkeleton />}>
+                    <UserDashboard
+                      events={events}
+                      currentUser={currentUser}
+                      onNewEvent={() => setShowCreateModal(true)}
+                      onSelectEvent={(id) => { setCurrentEventId(id); setView('event'); }}
+                      onRequestUpgrade={() => setShowContactModal(true)}
+                      t={t}
+                    />
+                  </Suspense>
+                )}
+
+                {view === 'event' && activeEvent && (
+                  <Suspense fallback={<LoadingSpinner />}>
+                    <EventGallery
+                      key={activeEvent.id}
+                      event={activeEvent}
+                      currentUser={currentUser}
+                      hostUser={hostUser}
+                      isEventExpired={isEventExpired}
+                      isOwner={Boolean(isOwner)}
+                      isHostPhotographer={Boolean(isHostPhotographer)}
+                      downloadingZip={downloadingZip}
+                      applyWatermark={applyWatermarkState}
+                      setApplyWatermark={setApplyWatermarkState}
+                      onSetCover={handleSetCoverImage}
+                      onUpload={initiateMediaAction}
+                      onDownloadAll={(media) => downloadEventZip({ ...activeEvent, media: media || activeEvent.media })}
+                      onLike={handleLikeMedia}
+                      onOpenLiveSlideshow={() => setView('live')}
+                      onRefresh={refreshCurrentEvent}
+                      t={t}
+                    />
+                  </Suspense>
+                )}
+              </div>
+            </div>
+          )}
+
+          {view === 'live' && activeEvent && (
+            <Suspense fallback={<LoadingSpinner />}>
+              <LiveSlideshow
+                event={activeEvent}
+                currentUser={currentUser}
+                hostUser={hostUser}
+                onClose={() => setView('event')}
+                t={t}
+              />
+            </Suspense>
+          )}
+        </main>
       </div>
 
       <PWAInstallPrompt t={t} />
@@ -1175,54 +1214,64 @@ export default function App() {
       <input key={fileInputKey} id="file-upload-input" name="file-upload" type="file" ref={fileInputRef} className="hidden" accept={canUploadVideos(currentUser, activeEvent?.hostTier).allowed ? "image/*,video/*" : "image/*"} onChange={handleFileUpload} autoComplete="off" />
       <input key={cameraInputKey} id="camera-upload-input" name="camera-upload" type="file" ref={cameraInputRef} className="hidden" accept="image/*" capture="environment" onChange={handleFileUpload} autoComplete="off" />
 
-      {previewMedia && (
-        <Suspense fallback={null}>
-          <MediaReviewModal
-            type={previewMedia.type}
-            src={previewMedia.src}
-            onConfirm={confirmUpload}
-            onRetake={() => {
-              setPreviewMedia(null);
-              if (lastUsedInput === 'camera') cameraInputRef.current?.click();
-              else fileInputRef.current?.click();
-            }}
-            onCancel={() => setPreviewMedia(null)}
-            isUploading={isUploading}
-            uploadProgress={uploadProgress}
-            isRegistered={!!currentUser}
-            t={t}
-            file={previewMedia.file}
-          />
-        </Suspense>
-      )}
+      {
+        previewMedia && (
+          <Suspense fallback={null}>
+            <MediaReviewModal
+              type={previewMedia.type}
+              src={previewMedia.src}
+              onConfirm={confirmUpload}
+              onRetake={() => {
+                setPreviewMedia(null);
+                if (lastUsedInput === 'camera') cameraInputRef.current?.click();
+                else fileInputRef.current?.click();
+              }}
+              onCancel={() => setPreviewMedia(null)}
+              isUploading={isUploading}
+              uploadProgress={uploadProgress}
+              isRegistered={!!currentUser}
+              t={t}
+              file={previewMedia.file}
+            />
+          </Suspense>
+        )
+      }
 
       <div className="fixed bottom-4 left-4 z-[9999] pointer-events-none bg-red-500 text-white text-[10px] font-bold px-2 py-1 rounded-full shadow-lg opacity-80">
         v2.1 NATIVE
       </div>
 
-      {showContactModal && (
-        <Suspense fallback={null}>
-          <ContactModal onClose={() => { setShowContactModal(false); setSelectedTier(undefined); }} t={t} tier={selectedTier} />
-        </Suspense>
-      )}
-      {showGuestLogin && (
-        <Suspense fallback={null}>
-          <GuestLoginModal onLogin={handleGuestLogin} onRegister={handleSignInRequest} onCancel={() => setShowGuestLogin(false)} t={t} />
-        </Suspense>
-      )}
-      {showCreateModal && currentUser && (
-        <Suspense fallback={null}>
-          <CreateEventModal currentUser={currentUser} onClose={() => setShowCreateModal(false)} onCreate={handleCreateEvent} t={t} />
-        </Suspense>
-      )}
-      {showStudioSettings && currentUser && (
-        <Suspense fallback={null}>
-          <StudioSettingsModal currentUser={currentUser} onClose={() => setShowStudioSettings(false)} onSave={handleUpdateStudioSettings} t={t} />
-        </Suspense>
-      )}
+      {
+        showContactModal && (
+          <Suspense fallback={null}>
+            <ContactModal onClose={() => { setShowContactModal(false); setSelectedTier(undefined); }} t={t} tier={selectedTier} />
+          </Suspense>
+        )
+      }
+      {
+        showGuestLogin && (
+          <Suspense fallback={null}>
+            <GuestLoginModal onLogin={handleGuestLogin} onRegister={handleSignInRequest} onCancel={() => setShowGuestLogin(false)} t={t} />
+          </Suspense>
+        )
+      }
+      {
+        showCreateModal && currentUser && (
+          <Suspense fallback={null}>
+            <CreateEventModal currentUser={currentUser} onClose={() => setShowCreateModal(false)} onCreate={handleCreateEvent} t={t} />
+          </Suspense>
+        )
+      }
+      {
+        showStudioSettings && currentUser && (
+          <Suspense fallback={null}>
+            <StudioSettingsModal currentUser={currentUser} onClose={() => setShowStudioSettings(false)} onSave={handleUpdateStudioSettings} t={t} />
+          </Suspense>
+        )
+      }
       <Suspense fallback={null}>
         <SupportChat isOpen={showSupportChat} onClose={() => setShowSupportChat(false)} currentUser={currentUser} t={t} />
       </Suspense>
-    </div>
+    </ToastProvider>
   );
 }

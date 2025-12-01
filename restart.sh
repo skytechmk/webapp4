@@ -136,14 +136,14 @@ sleep 5
 print_step "7/7: Performing health checks..."
 
 # Check main application
-if check_health "https://snapify.skytech.mk"; then
+if check_health "https://snapify.mk"; then
     print_status "✅ Frontend health check passed"
 else
     print_warning "⚠️  Frontend health check failed - service may still be starting"
 fi
 
 # Check API
-if check_health "https://snapify.skytech.mk/api/health"; then
+if check_health "https://snapify.mk/api/health"; then
     print_status "✅ API health check passed"
 else
     print_warning "⚠️  API health check failed - service may still be starting"
@@ -163,8 +163,8 @@ print_status ""
 print_status "🎉 SnapifY webapp full restart completed successfully!"
 print_status ""
 print_status "📊 Service Status:"
-echo "   🌐 Frontend: https://snapify.skytech.mk"
-echo "   🔌 API: https://snapify.skytech.mk/api/health"
+echo "   🌐 Frontend: https://snapify.mk"
+echo "   🔌 API: https://snapify.mk/api/health"
 echo "   📱 PM2 Process: snapify"
 print_status ""
 print_status "💡 Next steps:"

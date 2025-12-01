@@ -19,8 +19,8 @@ NC='\033[0m' # No Color
 PROJECT_DIR="/var/www/snapify"
 BACKUP_DIR="/var/www/backups"
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-DOMAIN="snapify.skytech.mk"  # Primary domain
-ALT_DOMAIN="snapify.mk"      # Alternative domain
+DOMAIN="snapify.mk"  # Primary domain
+ALT_DOMAIN=""      # Alternative domain
 
 # Function to print colored output
 print_status() {
