@@ -41,6 +41,43 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+
+    <!-- Dynamic OG Image and URL Configuration -->
+    <script>
+      (function() {
+        // Detect current domain and update OG meta tags accordingly
+        const currentDomain = window.location.hostname;
+        const isSnapifyMk = currentDomain === 'snapify.mk';
+        const isSnapifySkytech = currentDomain === 'snapify.skytech.mk';
+
+        // Update OG URL and image based on domain
+        const ogUrl = document.querySelector('meta[property="og:url"]');
+        const ogImage = document.querySelector('meta[property="og:image"]');
+        const twitterUrl = document.querySelector('meta[property="twitter:url"]');
+        const twitterImage = document.querySelector('meta[property="twitter:image"]');
+
+        if (ogUrl && ogImage && twitterUrl && twitterImage) {
+          if (isSnapifyMk) {
+            ogUrl.setAttribute('content', 'https://snapify.mk');
+            ogImage.setAttribute('content', 'https://snapify.mk/og-image.png');
+            twitterUrl.setAttribute('content', 'https://snapify.mk');
+            twitterImage.setAttribute('content', 'https://snapify.mk/og-image.png');
+          } else if (isSnapifySkytech) {
+            ogUrl.setAttribute('content', 'https://snapify.skytech.mk');
+            ogImage.setAttribute('content', 'https://snapify.skytech.mk/og-image.png');
+            twitterUrl.setAttribute('content', 'https://snapify.skytech.mk');
+            twitterImage.setAttribute('content', 'https://snapify.skytech.mk/og-image.png');
+          } else {
+            // Fallback for development/localhost
+            const baseUrl = window.location.origin;
+            ogUrl.setAttribute('content', baseUrl);
+            ogImage.setAttribute('content', baseUrl + '/og-image.png');
+            twitterUrl.setAttribute('content', baseUrl);
+            twitterImage.setAttribute('content', baseUrl + '/og-image.png');
+          }
+        }
+      })();
+    </script>
   <script type="importmap">
 {
   "imports": {

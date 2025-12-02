@@ -271,32 +271,48 @@ const EventGalleryComponent: React.FC<EventGalleryProps> = ({
 
     // --- REAL-TIME UPDATES & INIT ---
     useEffect(() => {
-        socketService.connect();
+        // Get current user token for authentication
+        const token = localStorage.getItem('snapify_token');
+
+        // Connect socket with authentication
+        socketService.connect(token || undefined);
         socketService.joinEvent(event.id);
 
         // Real-time media updates
-        // Real-time media updates
         socketService.on('media_uploaded', (newItem: MediaItem) => {
             console.log('EventGallery: Received media_uploaded event', newItem);
-
+  
             // Helper to process URLs (same as in App.tsx)
             const processUrl = (key: string) => {
                 if (!key) return '';
                 if (key.startsWith('/api/proxy-media') || key.startsWith('http')) return key;
                 return `/api/proxy-media?key=${encodeURIComponent(key)}`;
             };
-
+  
             const processedItem = {
                 ...newItem,
                 url: processUrl(newItem.url),
                 previewUrl: newItem.previewUrl ? processUrl(newItem.previewUrl) : processUrl(newItem.url)
             };
-
+  
             setLocalMedia(prev => {
                 // Prevent duplicates
                 if (prev.some(m => m.id === processedItem.id)) return prev;
+                // Add new media to the beginning of the array
                 return [processedItem, ...prev];
             });
+  
+            // FIX: Force re-render of grid items to ensure new media appears immediately
+            // This is especially important for virtualized lists
+            setTimeout(() => {
+                setLocalMedia(prev => [...prev]);
+            }, 100);
+  
+            // FIX: Also force a re-render of the grid items by updating the gridItems state
+            setTimeout(() => {
+                // This will trigger the useMemo to recompute gridItems
+                setActiveTab(prev => prev); // Toggle and restore active tab to force recomputation
+            }, 150);
         });
 
         socketService.on('media_processed', (data: { id: string, previewUrl: string, url?: string }) => {
@@ -758,7 +774,7 @@ const EventGalleryComponent: React.FC<EventGalleryProps> = ({
         }
         console.log('EventGallery: gridItems computed with', items.length, 'total items');
         return items;
-    }, [displayMedia, isOwner, currentUser, isBulkDeleteMode, searchQuery, vendors]);
+    }, [displayMedia, isOwner, currentUser, isBulkDeleteMode, searchQuery, vendors, localMedia.length]);
 
     const renderGridItem = useCallback((index: number) => {
         const item = gridItems[index];

@@ -88,6 +88,12 @@ export interface User {
   watermarkPosition?: WatermarkPosition;
   watermarkOffsetX?: number;
   watermarkOffsetY?: number;
+  // Beta testing fields
+  betaAccess?: boolean;
+  betaAccessGrantedAt?: string;
+  betaVersion?: 'v2.1' | 'v2.1-native';
+  betaFeatures?: string[];
+  betaFeedbackSubmitted?: boolean;
 }
 
 export interface Comment {

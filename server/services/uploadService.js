@@ -16,7 +16,6 @@ const __dirname = path.dirname(__filename);
 const uploadDir = path.join(__dirname, '../../server/uploads');
 
 if (!fs.existsSync(uploadDir)) {
-    console.log(`📂 Creating upload directory on startup: ${uploadDir}`);
     fs.mkdirSync(uploadDir, { recursive: true });
 }
 
@@ -60,7 +59,6 @@ export const processFileUpload = async (file, metadata, userId = null) => {
     const eventId = metadata.eventId;
     const isVideo = metadata.type === 'video';
 
-    console.log(`🎬 Starting upload processing for ${uploadId}`);
 
     // Initialize progress tracking
     uploadProgress.set(uploadId, { status: 'processing', progress: 0 });
@@ -126,19 +124,16 @@ export const processFileUpload = async (file, metadata, userId = null) => {
                         watermarkText: mediaItem.watermarkText,
                         isProcessing: false
                     };
-
+    
                     // Emit to clients in the event room
                     io.to(eventId).emit('media_uploaded', formattedItem);
-                    console.log(`📡 Emitted media_uploaded event for ${uploadId} to event room ${eventId}`);
                 }
             });
         }
 
-        console.log(`✅ Upload completed for ${uploadId}`);
         return { success: true, uploadId };
 
     } catch (error) {
-        console.error(`❌ Upload failed for ${uploadId}:`, error);
 
         // Mark as failed
         uploadProgress.set(uploadId, { status: 'failed', progress: 0, error: error.message });
@@ -198,7 +193,6 @@ const insertMediaRecord = async (metadata, s3Key, previewKey, userId) => {
 };
 
 const processImageUpload = async (file, s3Key, previewKey, eventId, uploadId) => {
-    console.log(`🖼️ Processing image upload for ${uploadId}`);
 
     // Create thumbnail
     const previewPath = path.join(uploadDir, `thumb_${uploadId}.jpg`);
@@ -207,11 +201,9 @@ const processImageUpload = async (file, s3Key, previewKey, eventId, uploadId) =>
     try {
         // Ensure upload directory exists
         if (!fs.existsSync(uploadDir)) {
-            console.log(`📂 Creating upload directory: ${uploadDir}`);
             fs.mkdirSync(uploadDir, { recursive: true });
         }
 
-        console.log(`📸 Creating thumbnail for ${uploadId} at ${previewPath}`);
 
         // Create thumbnail with error handling
         try {
@@ -221,13 +213,10 @@ const processImageUpload = async (file, s3Key, previewKey, eventId, uploadId) =>
                 .jpeg({ quality: 80, progressive: true })
                 .toFile(previewPath);
             thumbnailCreated = true;
-            console.log(`✅ Thumbnail created successfully for ${uploadId}`);
         } catch (sharpError) {
-            console.error(`❌ Sharp processing failed for ${uploadId}:`, sharpError);
             throw new Error(`Image processing failed: ${sharpError.message}`);
         }
 
-        console.log(`📤 Uploading image and thumbnail to S3 for ${uploadId}`);
 
         // Upload both files in parallel (don't auto-delete, we'll handle cleanup)
         try {
@@ -235,7 +224,6 @@ const processImageUpload = async (file, s3Key, previewKey, eventId, uploadId) =>
                 uploadToS3(file.path, s3Key, file.mimetype, false),
                 uploadToS3(previewPath, previewKey, 'image/jpeg', false)
             ]);
-            console.log(`✅ S3 upload completed for ${uploadId}`);
         } catch (s3Error) {
             console.error(`❌ S3 upload failed for ${uploadId}:`, s3Error);
             throw new Error(`Storage upload failed: ${s3Error.message}`);
@@ -244,7 +232,6 @@ const processImageUpload = async (file, s3Key, previewKey, eventId, uploadId) =>
         // Update progress
         notifyUploadProgress(eventId, uploadId, 'uploading', 75);
 
-        console.log(`✅ Image upload flow completed for ${uploadId}`);
 
         // Emit media_processed event for real-time updates
         const io = getIo();
@@ -254,31 +241,25 @@ const processImageUpload = async (file, s3Key, previewKey, eventId, uploadId) =>
                 previewUrl: previewKey,
                 url: s3Key
             });
-            console.log(`📡 Emitted media_processed event for ${uploadId} to event room ${eventId}`);
         }
 
     } catch (error) {
-        console.error(`❌ Error processing image upload for ${uploadId}:`, error);
         throw error;
     } finally {
         // Cleanup temp files - only delete if they exist
         try {
             if (thumbnailCreated && fs.existsSync(previewPath)) {
                 fs.unlinkSync(previewPath);
-                console.log(`🧹 Cleaned up thumbnail for ${uploadId}`);
             }
             if (fs.existsSync(file.path)) {
                 fs.unlinkSync(file.path);
-                console.log(`🧹 Cleaned up original file for ${uploadId}`);
             }
         } catch (cleanupError) {
-            console.warn(`⚠️ Failed to cleanup files for ${uploadId}:`, cleanupError);
         }
     }
 };
 
 const processVideoUpload = async (file, s3Key, previewKey, eventId, uploadId) => {
-    console.log(`🎥 Processing video upload for ${uploadId}`);
 
     return new Promise((resolve, reject) => {
         const inputPath = file.path;
@@ -287,7 +268,6 @@ const processVideoUpload = async (file, s3Key, previewKey, eventId, uploadId) =>
         // Update progress
         notifyUploadProgress(eventId, uploadId, 'processing', 25);
 
-        console.log(`🎬 Spawning ffmpeg for ${uploadId}:`, { input: inputPath, output: outputPath });
 
         const ffmpeg = spawn('ffmpeg', [
             '-i', inputPath,
@@ -310,8 +290,6 @@ const processVideoUpload = async (file, s3Key, previewKey, eventId, uploadId) =>
         ffmpeg.on('close', async (code) => {
             try {
                 if (code === 0) {
-                    console.log(`✅ FFmpeg processing completed for ${uploadId}`);
-                    console.log(`📤 Uploading video and preview to S3 for ${uploadId}`);
 
                     // Upload both files (don't auto-delete, we'll handle cleanup)
                     try {
@@ -319,9 +297,7 @@ const processVideoUpload = async (file, s3Key, previewKey, eventId, uploadId) =>
                             uploadToS3(inputPath, s3Key, file.mimetype, false),
                             uploadToS3(outputPath, previewKey, 'video/mp4', false)
                         ]);
-                        console.log(`✅ S3 upload completed for ${uploadId}`);
                     } catch (s3Error) {
-                        console.error(`❌ S3 upload failed for ${uploadId}:`, s3Error);
                         throw new Error(`Storage upload failed: ${s3Error.message}`);
                     }
 
@@ -336,17 +312,13 @@ const processVideoUpload = async (file, s3Key, previewKey, eventId, uploadId) =>
                             previewUrl: previewKey,
                             url: s3Key
                         });
-                        console.log(`📡 Emitted media_processed event for video ${uploadId} to event room ${eventId}`);
                     }
 
                     // Notify completion
                     notifyUploadProgress(eventId, uploadId, 'completed', 100);
 
-                    console.log(`✅ Video upload flow completed for ${uploadId}`);
                     resolve();
                 } else {
-                    console.error(`❌ FFmpeg failed with code ${code} for ${uploadId}`);
-                    console.error(`FFmpeg stderr:`, stderr.slice(-500)); // Log last 500 chars
                     throw new Error(`FFmpeg failed with code ${code}`);
                 }
             } catch (error) {
@@ -359,7 +331,6 @@ const processVideoUpload = async (file, s3Key, previewKey, eventId, uploadId) =>
         });
 
         ffmpeg.on('error', (err) => {
-            console.error(`❌ FFmpeg spawn error for ${uploadId}:`, err);
             reject(err);
         });
     });

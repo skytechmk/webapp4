@@ -20,7 +20,6 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onCapture, onClose
         const url = URL.createObjectURL(file);
         onCapture(url, file);
       } catch (error) {
-        console.error('Error handling file:', error);
         setError('Failed to process image. Please try again.');
       } finally {
         setIsProcessing(false);

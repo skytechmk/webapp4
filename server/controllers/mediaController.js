@@ -39,10 +39,7 @@ class ProcessQueue {
 const videoQueue = new ProcessQueue(2);
 
 export const uploadMedia = async (req, res) => {
-    console.log('Upload attempt:', { file: req.file ? req.file.originalname : 'none', body: req.body });
-
     if (!req.file) {
-        console.log('Upload failed: No file provided');
         return res.status(400).json({ error: 'No file provided' });
     }
 
@@ -52,7 +49,6 @@ export const uploadMedia = async (req, res) => {
     // Validate uploader identity
     if (req.user) {
         if (uploaderId !== req.user.id) {
-            console.log('Upload failed: Identity mismatch', { uploaderId, userId: req.user.id });
             return res.status(403).json({ error: "Identity mismatch" });
         }
     } else {
@@ -63,11 +59,6 @@ export const uploadMedia = async (req, res) => {
 
     try {
         // Queue the upload for background processing
-        console.log('🔄 Queuing file upload:', {
-            uploadId: body.id,
-            eventId: body.eventId,
-            type: body.type
-        });
 
         const result = await queueFileUpload(req.file, {
             id: body.id,
@@ -81,7 +72,6 @@ export const uploadMedia = async (req, res) => {
             privacy: body.privacy || 'public'
         }, req.user?.id);
 
-        console.log('✅ File queued successfully:', result);
 
         // Return immediate response with upload ID
         res.json({
@@ -91,7 +81,6 @@ export const uploadMedia = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Upload queue failed:', error);
 
         // Cleanup temp file
         if (req.file && req.file.path) {

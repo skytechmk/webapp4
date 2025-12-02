@@ -73,6 +73,7 @@ export default defineConfig({
         handle_links: 'preferred'
       },
       workbox: {
+        maximumFileSizeToCacheInBytes: 10 * 1024 * 1024, // 10 MB limit instead of default 2 MB
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
         skipWaiting: true,
         clientsClaim: true,
@@ -110,12 +111,18 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     sourcemap: false,
-    chunkSizeWarningLimit: 600,
+    chunkSizeWarningLimit: 1000,
     rollupOptions: {
       output: {
         manualChunks: {
           vendor: ['react', 'react-dom'],
-          libs: ['socket.io-client', 'lucide-react', 'recharts', 'qrcode.react']
+          libs: ['socket.io-client', 'lucide-react'],
+          charts: ['recharts'],
+          qrcode: ['qrcode.react'],
+          // Split large dependencies into separate chunks
+          utils: ['sharp', 'jszip', 'exif-js'],
+          auth: ['jsonwebtoken', 'jwt-decode', 'google-auth-library'],
+          aws: ['@aws-sdk/client-s3', '@aws-sdk/s3-request-presigner']
         }
       }
     }

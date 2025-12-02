@@ -82,24 +82,18 @@ class AuthService {
     // Authenticate user with email/password
     async authenticateUser(email, password) {
         return new Promise((resolve, reject) => {
-            console.log('Authenticating user:', email);
             db.get('SELECT * FROM users WHERE email = ?', [email.toLowerCase()], async (err, user) => {
                 if (err) {
-                    console.error('Database error during auth:', err);
                     return reject(new Error('Database error'));
                 }
                 if (!user) {
-                    console.log('User not found:', email);
                     return reject(new Error('Invalid credentials'));
                 }
-
-                console.log('User found:', user.email, 'has password:', !!user.password);
 
                 // Check if user has a password (some users might be Google-only)
                 // Allow default admin login for development
                 if (!user.password && user.email === 'admin@skytech.mk') {
                     // Create a default admin user on-the-fly for development
-                    console.log('Creating on-the-fly admin password');
                     const bcrypt = await import('bcrypt');
                     const hashedPassword = await bcrypt.hash('admin123', 10);
                     // Note: In production, this should be removed and proper admin user creation implemented
@@ -107,14 +101,11 @@ class AuthService {
                     user.role = 'ADMIN';
                     user.tier = 'STUDIO';
                 } else if (!user.password) {
-                    console.log('User has no password and is not admin');
                     return reject(new Error('Please use Google login for this account'));
                 }
 
                 // Verify password
-                console.log('Verifying password for:', email);
                 const isValidPassword = await this.verifyPassword(password, user.password);
-                console.log('Password valid:', isValidPassword);
                 if (!isValidPassword) return reject(new Error('Invalid credentials'));
 
                 // Generate token
@@ -124,7 +115,6 @@ class AuthService {
                     role: user.role
                 });
 
-                console.log('Authentication successful for:', email);
                 // Return user without password
                 const { password: _, ...userWithoutPassword } = user;
                 resolve({ user: userWithoutPassword, token });
@@ -136,28 +126,23 @@ class AuthService {
     async authenticateWithGoogle(credential) {
         return new Promise((resolve, reject) => {
             try {
-                console.log('Decoding Google credential...');
                 // In a production environment, you would verify the Google JWT token
                 // For now, we'll decode it and extract user info
                 const decoded = jwt.decode(credential);
 
                 if (!decoded || !decoded.email) {
-                    console.log('Invalid Google credential - no email');
                     return reject(new Error('Invalid Google credential'));
                 }
 
                 const { email, name, sub: googleId } = decoded;
-                console.log('Google user info:', { email, name, googleId });
 
                 // Check if user already exists
                 db.get('SELECT * FROM users WHERE email = ?', [email.toLowerCase()], (err, user) => {
                     if (err) {
-                        console.error('Database error during Google auth:', err);
                         return reject(new Error('Database error'));
                     }
 
                     if (!user) {
-                        console.log('Creating new Google user:', email);
                         // Create new user from Google data
                         const userId = `user_google_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
                         const now = new Date().toISOString();
@@ -169,19 +154,15 @@ class AuthService {
 
                         db.run(insertQuery, [userId, name, email.toLowerCase(), now], function(err) {
                             if (err) {
-                                console.error('Failed to create Google user:', err);
                                 return reject(new Error('Failed to create Google user'));
                             }
 
-                            console.log('Google user created, retrieving...');
                             // Get created user
                             db.get('SELECT id, name, email, role, tier, storageUsedMb, storageLimitMb, joinedDate FROM users WHERE id = ?', [userId], (err, newUser) => {
                                 if (err) {
-                                    console.error('Failed to retrieve Google user:', err);
                                     return reject(new Error('Failed to retrieve Google user'));
                                 }
 
-                                console.log('Google user retrieved, generating token...');
                                 // Generate token - use authService instance instead of this
                                 const token = authService.generateToken({
                                     id: newUser.id,
@@ -189,12 +170,10 @@ class AuthService {
                                     role: newUser.role
                                 });
 
-                                console.log('Google authentication successful');
                                 resolve({ user: newUser, token });
                             });
                         });
                     } else {
-                        console.log('Existing Google user found:', email);
                         // Generate token for existing user
                         const token = authService.generateToken({
                             id: user.id,
@@ -202,12 +181,10 @@ class AuthService {
                             role: user.role
                         });
 
-                        console.log('Google authentication successful for existing user');
                         resolve({ user, token });
                     }
                 });
             } catch (error) {
-                console.error('Google authentication error:', error);
                 reject(new Error('Google authentication failed'));
             }
         });

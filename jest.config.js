@@ -17,7 +17,9 @@ export default {
         '<rootDir>/services/**/__tests__/**/*.{js,ts}',
         '<rootDir>/services/**/*.{test,spec}.{js,ts}',
         '<rootDir>/server/**/__tests__/**/*.{js,ts}',
-        '<rootDir>/server/**/*.{test,spec}.{js,ts}'
+        '<rootDir>/server/**/*.{test,spec}.{js,ts}',
+        '<rootDir>/lib/**/__tests__/**/*.{js,ts}',
+        '<rootDir>/lib/**/*.{test,spec}.{js,ts}'
     ],
 
     // Module file extensions

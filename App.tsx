@@ -24,6 +24,9 @@ const OfflineBanner = lazy(() => import('./components/OfflineBanner').then(modul
 const ShareTargetHandler = lazy(() => import('./components/ShareTargetHandler').then(module => ({ default: module.ShareTargetHandler })));
 const ReloadPrompt = lazy(() => import('./components/ReloadPrompt').then(module => ({ default: module.ReloadPrompt })));
 const SupportChat = lazy(() => import('./components/SupportChat').then(module => ({ default: module.SupportChat })));
+const BetaFeedbackModal = lazy(() => import('./components/BetaFeedbackModal').then(module => ({ default: module.BetaFeedbackModal })));
+const BetaAccessModal = lazy(() => import('./components/BetaAccessModal').then(module => ({ default: module.BetaAccessModal })));
+const BetaSettings = lazy(() => import('./components/BetaSettings').then(module => ({ default: module.BetaSettings })));
 
 // Keep lightweight utilities as direct imports
 import { applyWatermark, processImage } from './utils/imageProcessing';
@@ -34,6 +37,7 @@ import { clearAllCaches } from './utils/cacheManager';
 import { canUploadVideos } from './utils/videoPermissions';
 import { Skeleton, SkeletonGrid, SkeletonCard } from './components/Skeleton';
 import { ToastProvider } from './components/Toast';
+import { BetaBadge, VersionIndicator } from './components/BetaBadge';
 
 // @ts-ignore
 const env: any = (import.meta as any).env || {};
@@ -93,6 +97,11 @@ export default function App() {
   const [showSupportChat, setShowSupportChat] = useState(false);
 
   const [fetchedHostUsers, setFetchedHostUsers] = useState<Record<string, User>>({});
+
+  // Beta testing state
+  const [showBetaFeedback, setShowBetaFeedback] = useState(false);
+  const [showBetaAccess, setShowBetaAccess] = useState(false);
+  const [showBetaSettings, setShowBetaSettings] = useState(false);
 
   const fetchHostUser = useCallback(async (hostId: string) => {
     if (fetchedHostUsers[hostId] || currentUser?.id === hostId) return;
@@ -763,7 +772,24 @@ export default function App() {
       socketService.joinEvent(currentEventId);
 
       const updatedEvent = await api.fetchEventById(currentEventId);
-      setEvents(prev => prev.map(e => e.id === currentEventId ? updatedEvent : e));
+
+      // Update events state without changing view - FIXED: Ensure view state is preserved
+      setEvents(prev => {
+        const existingEvent = prev.find(e => e.id === currentEventId);
+        if (existingEvent) {
+          // Preserve the current view and only update event data
+          return prev.map(e => e.id === currentEventId ? updatedEvent : e);
+        } else {
+          // If event doesn't exist in current state, add it
+          return [...prev, updatedEvent];
+        }
+      });
+
+      // FIX: Explicitly ensure we stay on the event view
+      if (view !== 'event') {
+        console.log('Pull-to-refresh: Restoring event view');
+        setView('event');
+      }
 
       console.log('Pull-to-refresh: Successfully refreshed event with', updatedEvent.media.length, 'media items');
     } catch (err) {
@@ -1237,8 +1263,8 @@ export default function App() {
         )
       }
 
-      <div className="fixed bottom-4 left-4 z-[9999] pointer-events-none bg-red-500 text-white text-[10px] font-bold px-2 py-1 rounded-full shadow-lg opacity-80">
-        v2.1 NATIVE
+      <div className="fixed bottom-4 left-4 z-[9999] pointer-events-none">
+        <BetaBadge className="opacity-80 shadow-lg" />
       </div>
 
       {
@@ -1272,6 +1298,56 @@ export default function App() {
       <Suspense fallback={null}>
         <SupportChat isOpen={showSupportChat} onClose={() => setShowSupportChat(false)} currentUser={currentUser} t={t} />
       </Suspense>
+
+      {/* Beta Testing Modals */}
+      {showBetaFeedback && (
+        <Suspense fallback={null}>
+          <BetaFeedbackModal
+            isOpen={showBetaFeedback}
+            onClose={() => setShowBetaFeedback(false)}
+            currentUser={currentUser}
+            t={t}
+          />
+        </Suspense>
+      )}
+
+      {showBetaAccess && (
+        <Suspense fallback={null}>
+          <BetaAccessModal
+            isOpen={showBetaAccess}
+            onClose={() => setShowBetaAccess(false)}
+            currentUser={currentUser}
+            t={t}
+          />
+        </Suspense>
+      )}
+
+      {showBetaSettings && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-xl font-bold text-gray-900">
+                  {t('betaSettings') || 'Beta Settings'}
+                </h2>
+                <button
+                  onClick={() => setShowBetaSettings(false)}
+                  className="text-gray-400 hover:text-gray-600 text-2xl"
+                >
+                  ×
+                </button>
+              </div>
+              <Suspense fallback={<div className="text-center py-8">Loading...</div>}>
+                <BetaSettings
+                  currentUser={currentUser}
+                  t={t}
+                  isAdmin={currentUser?.role === UserRole.ADMIN}
+                />
+              </Suspense>
+            </div>
+          </div>
+        </div>
+      )}
     </ToastProvider>
   );
 }
