@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef, Suspense, lazy, useCallback } from 'react';
+import * as React from 'react';
+import { useState, useEffect, useRef, Suspense, lazy, useCallback } from 'react';
 // @ts-ignore
 import JSZip from 'jszip';
 // @ts-ignore
@@ -6,27 +7,28 @@ import { jwtDecode } from 'jwt-decode';
 import { User, Event, MediaItem, UserRole, TierLevel, Language, TranslateFn, TIER_CONFIG, getTierConfigForUser, getTierConfig } from './types';
 import { api } from './services/api';
 import { TRANSLATIONS } from './constants';
+import { ZipManager, ZipProgress } from './utils/zipManager';
 
 // Lazy load heavy components for code splitting
-const AdminDashboard = lazy(() => import('./components/AdminDashboard').then(module => ({ default: module.AdminDashboard })));
-const Navigation = lazy(() => import('./components/Navigation').then(module => ({ default: module.Navigation })));
-const LandingPage = lazy(() => import('./components/LandingPage').then(module => ({ default: module.LandingPage })));
-const UserDashboard = lazy(() => import('./components/UserDashboard').then(module => ({ default: module.UserDashboard })));
-const EventGallery = lazy(() => import('./components/EventGallery').then(module => ({ default: module.EventGallery })));
-const CreateEventModal = lazy(() => import('./components/CreateEventModal').then(module => ({ default: module.CreateEventModal })));
-const ContactModal = lazy(() => import('./components/ContactModal').then(module => ({ default: module.ContactModal })));
-const GuestLoginModal = lazy(() => import('./components/GuestLoginModal').then(module => ({ default: module.GuestLoginModal })));
-const StudioSettingsModal = lazy(() => import('./components/StudioSettingsModal').then(module => ({ default: module.StudioSettingsModal })));
-const MediaReviewModal = lazy(() => import('./components/MediaReviewModal').then(module => ({ default: module.MediaReviewModal })));
-const LiveSlideshow = lazy(() => import('./components/LiveSlideshow').then(module => ({ default: module.LiveSlideshow })));
-const PWAInstallPrompt = lazy(() => import('./components/PWAInstallPrompt').then(module => ({ default: module.PWAInstallPrompt })));
-const OfflineBanner = lazy(() => import('./components/OfflineBanner').then(module => ({ default: module.OfflineBanner })));
-const ShareTargetHandler = lazy(() => import('./components/ShareTargetHandler').then(module => ({ default: module.ShareTargetHandler })));
-const ReloadPrompt = lazy(() => import('./components/ReloadPrompt').then(module => ({ default: module.ReloadPrompt })));
-const SupportChat = lazy(() => import('./components/SupportChat').then(module => ({ default: module.SupportChat })));
-const BetaFeedbackModal = lazy(() => import('./components/BetaFeedbackModal').then(module => ({ default: module.BetaFeedbackModal })));
-const BetaAccessModal = lazy(() => import('./components/BetaAccessModal').then(module => ({ default: module.BetaAccessModal })));
-const BetaSettings = lazy(() => import('./components/BetaSettings').then(module => ({ default: module.BetaSettings })));
+const AdminDashboard = lazy<React.ComponentType<AdminDashboardProps>>(() => import('./components/AdminDashboard').then(module => ({ default: module.AdminDashboard })));
+const Navigation = lazy<React.ComponentType<NavigationProps>>(() => import('./components/Navigation').then(module => ({ default: module.Navigation })));
+const LandingPage = lazy<React.ComponentType<LandingPageProps>>(() => import('./components/LandingPage').then(module => ({ default: module.LandingPage })));
+const UserDashboard = lazy<React.ComponentType<UserDashboardProps>>(() => import('./components/UserDashboard').then(module => ({ default: module.UserDashboard })));
+const EventGallery = lazy<React.ComponentType<EventGalleryProps>>(() => import('./components/EventGallery').then(module => ({ default: module.EventGallery })));
+const CreateEventModal = lazy<React.ComponentType<CreateEventModalProps>>(() => import('./components/CreateEventModal').then(module => ({ default: module.CreateEventModal })));
+const ContactModal = lazy<React.ComponentType<ContactModalProps>>(() => import('./components/ContactModal').then(module => ({ default: module.ContactModal })));
+const GuestLoginModal = lazy<React.ComponentType<GuestLoginModalProps>>(() => import('./components/GuestLoginModal').then(module => ({ default: module.GuestLoginModal })));
+const StudioSettingsModal = lazy<React.ComponentType<StudioSettingsModalProps>>(() => import('./components/StudioSettingsModal').then(module => ({ default: module.StudioSettingsModal })));
+const MediaReviewModal = lazy<React.ComponentType<MediaReviewModalProps>>(() => import('./components/MediaReviewModal').then(module => ({ default: module.MediaReviewModal })));
+const LiveSlideshow = lazy<React.ComponentType<LiveSlideshowProps>>(() => import('./components/LiveSlideshow').then(module => ({ default: module.LiveSlideshow })));
+const PWAInstallPrompt = lazy<React.ComponentType<PWAInstallPromptProps>>(() => import('./components/PWAInstallPrompt').then(module => ({ default: module.PWAInstallPrompt })));
+const OfflineBanner = lazy<React.ComponentType<OfflineBannerProps>>(() => import('./components/OfflineBanner').then(module => ({ default: module.OfflineBanner })));
+const ShareTargetHandler = lazy<React.ComponentType<ShareTargetHandlerProps>>(() => import('./components/ShareTargetHandler').then(module => ({ default: module.ShareTargetHandler })));
+const ReloadPrompt = lazy<React.ComponentType<ReloadPromptProps>>(() => import('./components/ReloadPrompt').then(module => ({ default: module.ReloadPrompt })));
+const SupportChat = lazy<React.ComponentType<SupportChatProps>>(() => import('./components/SupportChat').then(module => ({ default: module.SupportChat })));
+const BetaFeedbackModal = lazy<React.ComponentType<BetaFeedbackModalProps>>(() => import('./components/BetaFeedbackModal').then(module => ({ default: module.BetaFeedbackModal })));
+const BetaAccessModal = lazy<React.ComponentType<BetaAccessModalProps>>(() => import('./components/BetaAccessModal').then(module => ({ default: module.BetaAccessModal })));
+const BetaSettings = lazy<React.ComponentType<BetaSettingsProps>>(() => import('./components/BetaSettings').then(module => ({ default: module.BetaSettings })));
 
 // Keep lightweight utilities as direct imports
 import { applyWatermark, processImage } from './utils/imageProcessing';
@@ -38,6 +40,170 @@ import { canUploadVideos } from './utils/videoPermissions';
 import { Skeleton, SkeletonGrid, SkeletonCard } from './components/Skeleton';
 import { ToastProvider } from './components/Toast';
 import { BetaBadge, VersionIndicator } from './components/BetaBadge';
+import { DownloadProgress } from './components/DownloadProgress';
+
+// Component Prop Types
+interface OfflineBannerProps {
+  t: TranslateFn;
+}
+
+interface ShareTargetHandlerProps {
+  onShareReceive: (text: string) => void;
+}
+
+interface NavigationProps {
+  currentUser: User | null;
+  guestName: string;
+  view: 'landing' | 'dashboard' | 'event' | 'admin' | 'live';
+  currentEventTitle: string;
+  language: Language;
+  onChangeLanguage: (lang: Language) => void;
+  onLogout: () => Promise<void>;
+  onSignIn: () => void;
+  onHome: () => void;
+  onBack: () => void;
+  onToAdmin: () => void;
+  onOpenSettings: () => void;
+  t: TranslateFn;
+}
+
+interface LandingPageProps {
+  onGoogleLogin: () => void;
+  onEmailAuth: (data: any, isSignUp: boolean) => Promise<void>;
+  onContactSales: (tier?: TierLevel) => void;
+  isLoggingIn: boolean;
+  authError: string;
+  language: Language;
+  onChangeLanguage: (lang: Language) => void;
+  t: TranslateFn;
+}
+
+interface PWAInstallPromptProps {
+  t: TranslateFn;
+}
+
+interface ReloadPromptProps {
+  // ReloadPrompt doesn't seem to need any props based on usage
+}
+
+interface ContactModalProps {
+  onClose: () => void;
+  t: TranslateFn;
+  tier?: TierLevel;
+}
+
+interface AdminDashboardProps {
+  users: User[];
+  events: Event[];
+  onClose: () => void;
+  onLogout: () => Promise<void>;
+  onDeleteUser: (id: string) => Promise<void>;
+  onDeleteEvent: (id: string) => Promise<void>;
+  onDeleteMedia: (eventId: string, mediaId: string) => Promise<void>;
+  onUpdateEvent: (updatedEvent: Event) => Promise<void>;
+  onUpdateUser: (updatedUser: User) => Promise<void>;
+  onNewEvent: () => void;
+  onDownloadEvent: (event: Event) => Promise<void>;
+  t: TranslateFn;
+}
+
+interface UserDashboardProps {
+  events: Event[];
+  currentUser: User;
+  onNewEvent: () => void;
+  onSelectEvent: (id: string) => void;
+  onRequestUpgrade: () => void;
+  t: TranslateFn;
+}
+
+interface EventGalleryProps {
+  key?: string;
+  event: Event;
+  currentUser: User | null;
+  hostUser: User | null;
+  isEventExpired: boolean;
+  isOwner: boolean;
+  isHostPhotographer: boolean;
+  downloadingZip: boolean;
+  applyWatermark: boolean;
+  setApplyWatermark: (value: boolean) => void;
+  onSetCover: (item: MediaItem) => Promise<void>;
+  onUpload: (action: 'upload' | 'camera') => void;
+  onDownloadAll: (media?: MediaItem[]) => Promise<void>;
+  onLike: (item: MediaItem) => Promise<void>;
+  onOpenLiveSlideshow: () => void;
+  onRefresh: () => Promise<void>;
+  t: TranslateFn;
+}
+
+interface LiveSlideshowProps {
+  event: Event;
+  currentUser: User | null;
+  hostUser: User | null;
+  onClose: () => void;
+  t: TranslateFn;
+}
+
+interface MediaReviewModalProps {
+  type: 'image' | 'video';
+  src: string;
+  onConfirm: (userCaption: string, userPrivacy: 'public' | 'private', rotation?: number) => Promise<void>;
+  onRetake: () => void;
+  onCancel: () => void;
+  isUploading: boolean;
+  uploadProgress: number;
+  isRegistered: boolean;
+  t: TranslateFn;
+  file?: File;
+}
+
+interface SupportChatProps {
+  isOpen: boolean;
+  onClose: () => void;
+  currentUser: User | null;
+  t: TranslateFn;
+}
+
+interface BetaFeedbackModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  currentUser: User | null;
+  t: TranslateFn;
+}
+
+interface BetaAccessModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  currentUser: User | null;
+  t: TranslateFn;
+}
+
+interface BetaSettingsProps {
+  currentUser: User | null;
+  t: TranslateFn;
+  isAdmin: boolean;
+}
+
+interface GuestLoginModalProps {
+  onLogin: (name: string) => void;
+  onRegister: () => void;
+  onCancel: () => void;
+  t: TranslateFn;
+}
+
+interface CreateEventModalProps {
+  currentUser: User;
+  onClose: () => void;
+  onCreate: (data: any) => Promise<void>;
+  t: TranslateFn;
+}
+
+interface StudioSettingsModalProps {
+  currentUser: User;
+  onClose: () => void;
+  onSave: (updates: Partial<User>) => Promise<void>;
+  t: TranslateFn;
+}
 
 // @ts-ignore
 const env: any = (import.meta as any).env || {};
@@ -88,6 +254,8 @@ export default function App() {
 
   const [applyWatermarkState, setApplyWatermarkState] = useState(false);
   const [downloadingZip, setDownloadingZip] = useState(false);
+  const [zipProgress, setZipProgress] = useState<ZipProgress | null>(null);
+  const [estimatedZipSize, setEstimatedZipSize] = useState<number>(0);
 
   const [previewMedia, setPreviewMedia] = useState<{ type: 'image' | 'video', src: string, file?: File } | null>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -953,50 +1121,96 @@ export default function App() {
   const downloadEventZip = async (targetEvent: Event) => {
     if (!targetEvent || targetEvent.media.length === 0) return;
     setDownloadingZip(true);
+    setZipProgress({
+      totalFiles: targetEvent.media.length,
+      processedFiles: 0,
+      currentFile: null,
+      progressPercentage: 0,
+      estimatedSizeMb: 0,
+      isCancelled: false,
+      isComplete: false,
+      error: null
+    });
+
     try {
-      const zip = new JSZip();
-      const folder = zip.folder(targetEvent.title.replace(/[^a-z0-9]/gi, '_'));
       const eventHost = allUsers.find(u => u.id === targetEvent.hostId);
       const isFreeTier = !eventHost || eventHost.tier === TierLevel.FREE;
-      const fetchFile = async (url: string) => {
-        const fetchUrl = url.startsWith('http') || url.startsWith('data:') ? url : `${(env.VITE_API_URL || '')}${url}`;
-        const res = await fetch(fetchUrl);
-        return res.blob();
-      };
-      const blobToBase64 = (blob: Blob): Promise<string> => new Promise(resolve => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result as string);
-        reader.readAsDataURL(blob);
-      });
-      for (const item of targetEvent.media) {
-        const filename = `${item.id}.${item.type === 'video' ? 'mp4' : 'jpg'}`;
-        if (!item.url) continue;
-        let blob = await fetchFile(item.url);
-        if (isFreeTier && item.type === 'image') {
-          try {
-            const base64 = await blobToBase64(blob);
-            const watermarkedDataUrl = await applyWatermark(base64, "SnapifY", null, 0.5, 30, 'center', 0, 0);
-            const cleanData = watermarkedDataUrl.split(',')[1];
-            if (folder) folder.file(filename, cleanData, { base64: true });
-            continue;
-          } catch (e) { console.warn("Failed to watermark image for zip", e); }
-        }
-        if (folder) folder.file(filename, blob);
+
+      // Create file info array
+      const files = targetEvent.media
+        .filter(item => item.url)
+        .map(item => ({
+          filename: `${item.id}.${item.type === 'video' ? 'mp4' : 'jpg'}`,
+          size: 0,
+          type: item.type as 'image' | 'video',
+          url: item.url
+        }));
+
+      if (files.length === 0) {
+        throw new Error('No valid files to download');
       }
-      const content = await zip.generateAsync({ type: "blob" });
+
+      // Create zip manager with progress tracking
+      const zipManagerInstance = new ZipManager({
+        compressionLevel: 6,
+        chunkSize: 3,
+        onProgress: (progress) => {
+          setZipProgress({ ...progress });
+          setEstimatedZipSize(progress.estimatedSizeMb);
+        },
+        onError: (error) => {
+          console.error('Zip error:', error);
+          setZipProgress(prev => prev ? { ...prev, error: error.message } : null);
+        },
+        onComplete: () => {
+          console.log('Zip generation completed successfully');
+          // The download will be triggered after this completes
+        }
+      });
+
+      // Generate zip with progress tracking
+      const { zipBlob, cleanup } = await zipManagerInstance.generateZip(
+        files,
+        targetEvent.title,
+        isFreeTier
+      );
+
+      // Download the zip file
       const link = document.createElement('a');
-      link.href = URL.createObjectURL(content);
+      link.href = URL.createObjectURL(zipBlob);
       link.download = `${targetEvent.title.replace(/[^a-z0-9]/gi, '_')}_memories.zip`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+
+      // Update download count
       await api.updateEvent({ ...targetEvent, downloads: (targetEvent.downloads || 0) + 1 });
       setEvents(prev => prev.map(e => e.id === targetEvent.id ? { ...e, downloads: (e.downloads || 0) + 1 } : e));
+
+      // Cleanup resources after a small delay to ensure download completes
+      setTimeout(() => {
+        cleanup();
+        URL.revokeObjectURL(link.href);
+      }, 2000);
+
     } catch (err) {
+      console.error('Zip download failed:', err);
+      setZipProgress(prev => prev ? { ...prev, error: err instanceof Error ? err.message : 'Unknown error' } : null);
       alert(t('zipError'));
     } finally {
       setDownloadingZip(false);
+      // Keep progress visible for a few seconds after completion
+      setTimeout(() => {
+        setZipProgress(null);
+        setEstimatedZipSize(0);
+      }, 3000);
     }
+  };
+
+  const cancelZipDownload = () => {
+    // This would be implemented in the ZipManager if we had a reference to the active instance
+    setZipProgress(prev => prev ? { ...prev, isCancelled: true, error: 'Download cancelled by user' } : null);
+    setDownloadingZip(false);
   };
 
   const handleLogout = async () => {
@@ -1347,6 +1561,16 @@ export default function App() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Download Progress Modal */}
+      {zipProgress && (
+        <DownloadProgress
+          progress={zipProgress}
+          estimatedSizeMb={estimatedZipSize}
+          onCancel={cancelZipDownload}
+          t={t}
+        />
       )}
     </ToastProvider>
   );

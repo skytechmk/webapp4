@@ -1,4 +1,5 @@
-import React, { useState, useRef } from 'react';
+import * as React from 'react';
+const { useState, useRef } = React;
 import { Plus, Sparkles, Zap, Clock, Calendar, Image as ImageIcon, User as UserIcon, Crown, Star, BarChart3, TrendingUp, Users, Download, Settings, Camera, Video, Palette, MessageCircle, Upload, X } from 'lucide-react';
 import { Event, User, TranslateFn, TierLevel, UserRole } from '../types';
 

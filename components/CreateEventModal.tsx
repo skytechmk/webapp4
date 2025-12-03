@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
+import * as React from 'react';
+const { useState, useEffect, useRef } = React;
 import { X, Sparkles, ShieldCheck, Lock, MapPin, Loader2 } from 'lucide-react';
 import { EVENT_THEMES } from '../constants';
 import { api } from '../services/api';

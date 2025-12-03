@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo, memo } from 'react';
+import * as React from 'react';
+const { useState, useEffect, useCallback, useRef, useMemo, memo } = React;
 import { VirtuosoGrid } from 'react-virtuoso';
 import { ShieldCheck, Download, Calendar, LayoutGrid, Camera, Video, Star, Share2, Upload, CheckCircle, Link as LinkIcon, Play, Heart, X, Pause, BookOpen, Send, Lock, Search, ScanFace, Loader2, Trash2, CheckSquare, Square, ChevronLeft, ChevronRight, MessageSquare, Globe, AlertTriangle, Plus, ImagePlus, MapPin, ArrowDown } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';

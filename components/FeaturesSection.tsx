@@ -1,4 +1,5 @@
-import React, { memo } from 'react';
+import * as React from 'react';
+const { memo } = React;
 import { Cast, Aperture, Shield, CheckCircle2 } from 'lucide-react';
 import { TranslateFn } from '../types';
 

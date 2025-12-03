@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import * as React from 'react';
+const { useState, useEffect } = React;
 import { Download, X, Share, PlusSquare } from 'lucide-react';
 import { usePWA } from '../hooks/usePWA';
 import { isIOS } from '../utils/deviceDetection';

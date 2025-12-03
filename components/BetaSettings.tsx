@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import * as React from 'react';
+const { useState, useEffect } = React;
 import { BetaTestingManager, BetaConfig, BetaFeature } from '../lib/beta-testing';
 import { User } from '../types';
 import { UserPreferencesManager } from '../lib/auth/user-preferences';

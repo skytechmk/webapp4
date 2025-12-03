@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zip Download Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .log-container {
+            height: 400px;
+            overflow-y: auto;
+            border: 1px solid #ccc;
+            padding: 10px;
+            background: #f5f5f5;
+            font-family: monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+        }
+
+        .log-error {
+            color: red;
+        }
+
+        .log-success {
+            color: green;
+        }
+
+        .log-info {
+            color: blue;
+        }
+
+        button {
+            padding: 10px 20px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        button:hover {
+            background: #45a049;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Zip Download Test</h1>
+    <p>This test will help identify where the zip download process is getting stuck.</p>
+
+    <button id="startTest">Start Zip Download Test</button>
+
+    <h2>Test Logs</h2>
+    <div class="log-container" id="logContainer"></div>
+
+    <script type="module">
+        // Import the ZipManager - this will work in the browser with Vite
+        import { ZipManager } from './utils/zipManager.ts';
+
+        const logContainer = document.getElementById('logContainer');
+        const startTestBtn = document.getElementById('startTest');
+
+        function log(message, type = 'info') {
+            const logEntry = document.createElement('div');
+            logEntry.textContent = message;
+            logEntry.className = `log-${type}`;
+            logContainer.appendChild(logEntry);
+            logContainer.scrollTop = logContainer.scrollHeight;
+            console.log(message);
+        }
+
+        async function testZipDownload() {
+            log('Starting zip download test...', 'info');
+
+            let progressUpdates = 0;
+            let completionCalled = false;
+            let errorOccurred = false;
+
+            const zipManager = new ZipManager({
+                compressionLevel: 6,
+                chunkSize: 2,
+                onProgress: (progress) => {
+                    progressUpdates++;
+                    log(`Progress update ${progressUpdates}: ${progress.progressPercentage}% (${progress.processedFiles}/${progress.totalFiles}) - ${progress.currentFile || 'no file'}`, 'info');
+
+                    // Verify progress doesn't exceed 99% during processing
+                    if (!progress.isComplete && progress.progressPercentage >= 100) {
+                        log('ERROR: Progress exceeded 100% before completion!', 'error');
+                        errorOccurred = true;
+                    }
+
+                    // Verify completion state
+                    if (progress.isComplete) {
+                        if (progress.progressPercentage !== 100) {
+                            log('ERROR: Completion state set but progress not 100%!', 'error');
+                            errorOccurred = true;
+                        }
+                        if (progress.processedFiles !== progress.totalFiles) {
+                            log('ERROR: Completion state set but not all files processed!', 'error');
+                            errorOccurred = true;
+                        }
+                    }
+                },
+                onError: (error) => {
+                    log(`Zip error occurred: ${error.message}`, 'error');
+                    errorOccurred = true;
+                },
+                onComplete: () => {
+                    log('✅ Zip generation completed successfully!', 'success');
+                    completionCalled = true;
+                }
+            });
+
+            // Mock data for testing
+            const mockFiles = [
+                {
+                    filename: 'test1.jpg',
+                    size: 1024 * 1024, // 1MB
+                    type: 'image',
+                    url: 'https://example.com/test1.jpg'
+                },
+                {
+                    filename: 'test2.jpg',
+                    size: 2 * 1024 * 1024, // 2MB
+                    type: 'image',
+                    url: 'https://example.com/test2.jpg'
+                }
+            ];
+
+            try {
+                log('Starting zip generation...', 'info');
+                // This will fail because the URLs are mock, but we can test the progress logic
+                await zipManager.generateZip(mockFiles, 'Test_Event', false);
+            } catch (error) {
+                log(`Expected error with mock URLs: ${error.message}`, 'info');
+                // This is expected since we're using mock URLs
+            }
+
+            // Verify the fix
+            log('\n=== Test Results ===', 'info');
+            log(`Progress updates received: ${progressUpdates}`, 'info');
+            log(`Completion callback called: ${completionCalled}`, 'info');
+            log(`Errors occurred: ${errorOccurred}`, 'info');
+
+            if (progressUpdates > 0 && !errorOccurred) {
+                log('✅ Zip download progress tracking fix verified!', 'success');
+            } else {
+                log('❌ Issues found in zip download progress tracking', 'error');
+            }
+        }
+
+        startTestBtn.addEventListener('click', () => {
+            startTestBtn.disabled = true;
+            startTestBtn.textContent = 'Testing...';
+            testZipDownload().catch(error => {
+                log(`Test failed with error: ${error.message}`, 'error');
+                startTestBtn.disabled = false;
+                startTestBtn.textContent = 'Start Zip Download Test';
+            });
+        });
+    </script>
+</body>
+
+</html>

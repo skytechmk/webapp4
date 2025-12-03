@@ -1,4 +1,4 @@
-import React from 'react';
+import * as React from 'react';
 import { Zap } from 'lucide-react';
 import { TranslateFn } from '../types';
 

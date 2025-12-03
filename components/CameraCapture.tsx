@@ -1,4 +1,5 @@
-import React, { useRef, useState } from 'react';
+import * as React from 'react';
+const { useRef, useState } = React;
 import { X, Upload, Image as ImageIcon } from 'lucide-react';
 
 interface CameraCaptureProps {

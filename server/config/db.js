@@ -17,9 +17,38 @@ export const db = new sqlite3.Database(dbPath, (err) => {
         console.log('Connected to SQLite database');
         console.log('SQLite package version check - using sqlite3 package');
         db.run("PRAGMA foreign_keys = ON;");
-        // Temporarily disable WAL mode to avoid I/O issues
-        // db.run("PRAGMA journal_mode = DELETE;");
-        console.log('SQLite database initialized');
+
+        // Enable WAL mode for better write performance
+        db.run("PRAGMA journal_mode = WAL;", (walErr) => {
+            if (walErr) {
+                console.error('Failed to enable WAL mode:', walErr);
+                // Fallback to DELETE mode if WAL fails
+                db.run("PRAGMA journal_mode = DELETE;");
+                console.log('Fallback: Using DELETE journal mode');
+            } else {
+                console.log('✓ WAL mode enabled successfully');
+            }
+        });
+
+        // Set synchronous mode to NORMAL for better performance with WAL
+        db.run("PRAGMA synchronous = NORMAL;", (syncErr) => {
+            if (syncErr) {
+                console.error('Failed to set synchronous mode:', syncErr);
+            } else {
+                console.log('✓ Synchronous mode set to NORMAL');
+            }
+        });
+
+        // Increase cache size for better performance
+        db.run("PRAGMA cache_size = -20000;", (cacheErr) => {
+            if (cacheErr) {
+                console.error('Failed to set cache size:', cacheErr);
+            } else {
+                console.log('✓ Cache size set to 20MB');
+            }
+        });
+
+        console.log('SQLite database initialized with performance optimizations');
     }
 });
 
@@ -104,7 +133,7 @@ export const initDb = () => {
 
                 // Use sqlite3 async API instead of better-sqlite3
                 console.log('Using sqlite3 async db.run() API...');
-                db.run(insertQuery, [adminId, 'System Admin', config.ADMIN_EMAIL, hashedAdminPassword, new Date().toISOString()], function(err) {
+                db.run(insertQuery, [adminId, 'System Admin', config.ADMIN_EMAIL, hashedAdminPassword, new Date().toISOString()], function (err) {
                     if (err) {
                         console.error('INSERT error:', err);
                         console.error('Error message:', err.message);
@@ -137,21 +166,21 @@ export const initDb = () => {
                                 console.log('Retrying admin creation with direct insert...');
                                 db.run(`INSERT OR REPLACE INTO users (id, name, email, password, role, tier, storageUsedMb, storageLimitMb, joinedDate, studioName)
                                     VALUES (?, ?, ?, ?, 'ADMIN', 'STUDIO', 0, -1, ?, 'System Root')`,
-                                    [adminId, 'System Admin', config.ADMIN_EMAIL, hashedAdminPassword, new Date().toISOString()], function(err) {
-                                    if (err) {
-                                        console.error('Retry insert failed:', err);
-                                    } else {
-                                        console.log('Retry insert successful, changes:', this.changes);
-                                        // Final check
-                                        db.get('SELECT id, email, password FROM users WHERE id = ?', [adminId], (err, finalRow) => {
-                                            if (finalRow?.password) {
-                                                console.log('✅ Admin user created successfully on retry');
-                                            } else {
-                                                console.log('❌ Admin user creation still failed');
-                                            }
-                                        });
-                                    }
-                                });
+                                    [adminId, 'System Admin', config.ADMIN_EMAIL, hashedAdminPassword, new Date().toISOString()], function (err) {
+                                        if (err) {
+                                            console.error('Retry insert failed:', err);
+                                        } else {
+                                            console.log('Retry insert successful, changes:', this.changes);
+                                            // Final check
+                                            db.get('SELECT id, email, password FROM users WHERE id = ?', [adminId], (err, finalRow) => {
+                                                if (finalRow?.password) {
+                                                    console.log('✅ Admin user created successfully on retry');
+                                                } else {
+                                                    console.log('❌ Admin user creation still failed');
+                                                }
+                                            });
+                                        }
+                                    });
                             }
                         }
                     });

@@ -1,4 +1,4 @@
-import React from 'react';
+import * as React from 'react';
 import { BetaTestingManager } from '../lib/beta-testing';
 import { getVersionDisplayString } from '../utils/versionDetection';
 

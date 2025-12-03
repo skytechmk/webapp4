@@ -1,4 +1,5 @@
-import React, { useState, useEffect, createContext, useContext } from 'react';
+import * as React from 'react';
+const { useState, useEffect, createContext, useContext } = React;
 import { CheckCircle, XCircle, AlertCircle, X } from 'lucide-react';
 
 export interface Toast {

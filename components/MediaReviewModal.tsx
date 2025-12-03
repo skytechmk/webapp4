@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
+import * as React from 'react';
+const { useState, useEffect, useRef } = React;
 import { X, RotateCcw, Type, Send, Loader2, Lock, Globe, AlertCircle } from 'lucide-react';
 import { TranslateFn } from '../types';
 

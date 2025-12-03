@@ -22,14 +22,26 @@ const upload = multer({
     storage: storage,
     // limits: { fileSize: Infinity }, // Unlimited
     fileFilter: (req, file, cb) => {
+        console.log('📂 Multer received file:', {
+            originalname: file.originalname,
+            mimetype: file.mimetype,
+            size: file.size,
+            ip: req.ip || req.connection.remoteAddress
+        });
+
         const allowedMimes = [
             'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp',
             'video/mp4', 'video/mpeg', 'video/quicktime', 'video/x-msvideo', 'video/webm'
         ];
-        if (!allowedMimes.includes(file.mimetype)) return cb(new Error('Invalid file type'), false);
+
+        if (!allowedMimes.includes(file.mimetype)) {
+            console.warn('❌ Invalid file type rejected:', file.mimetype);
+            return cb(new Error('Invalid file type'), false);
+        }
 
         const clientIP = req.ip || req.connection.remoteAddress;
         if (!checkRateLimit(RateLimitStore.upload, clientIP, 50, 60 * 60 * 1000)) {
+            console.warn('❌ Upload rate limit exceeded for IP:', clientIP);
             return cb(new Error('Upload limit exceeded. Please try again later.'), false);
         }
         cb(null, true);
@@ -40,6 +52,7 @@ const router = express.Router();
 
 router.post('/', uploadLimiter, optionalAuth, upload.single('file'), mediaController.uploadMedia);
 router.get('/upload/:uploadId/status', optionalAuth, mediaController.getUploadStatus);
+router.get('/:id', optionalAuth, mediaController.getMediaById);
 router.delete('/:id', authenticateToken, mediaController.deleteMedia);
 router.post('/bulk-delete', authenticateToken, mediaController.bulkDeleteMedia);
 router.put('/:id/like', mediaController.likeMedia);

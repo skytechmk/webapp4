@@ -1,4 +1,4 @@
-import React from 'react';
+import * as React from 'react';
 import { X, ShieldCheck, Lock, FileText, Server, UserCheck } from 'lucide-react';
 import { TranslateFn } from '../types';
 

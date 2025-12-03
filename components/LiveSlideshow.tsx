@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import * as React from 'react';
+const { useState, useEffect, useRef, useCallback } = React;
 import { X, Play, Pause, Download, Share2, Heart, MessageSquare, Camera, Upload, QrCode } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { Event, MediaItem, TranslateFn, UserRole, TierLevel } from '../types';

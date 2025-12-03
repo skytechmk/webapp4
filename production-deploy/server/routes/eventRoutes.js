@@ -6,7 +6,7 @@ import { apiLimiter } from '../middleware/rateLimiter.js';
 const router = express.Router();
 
 router.get('/', apiLimiter, authenticateToken, eventController.getEvents);
-router.get('/:id', eventController.getEventById);
+router.get('/:id', apiLimiter, eventController.getEventById); // Public route for shared events
 router.post('/', authenticateToken, eventController.createEvent);
 router.put('/:id', authenticateToken, eventController.updateEvent);
 router.delete('/:id', authenticateToken, eventController.deleteEvent);

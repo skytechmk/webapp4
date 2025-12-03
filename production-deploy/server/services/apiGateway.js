@@ -22,7 +22,15 @@ class ApiGateway {
             next();
         });
 
-        // CORS configuration
+        // CORS configuration - allow all origins for shared events
+        this.app.use('/api/events/:id', cors({
+            origin: true, // Allow all origins for shared events
+            credentials: false, // No credentials needed for public events
+            methods: ['GET', 'OPTIONS'],
+            allowedHeaders: ['Content-Type']
+        }));
+
+        // Standard CORS for other routes
         this.app.use(cors({
             origin: config.ALLOWED_ORIGINS || ['http://localhost:3000', 'http://localhost:5173'],
             credentials: true,
@@ -72,17 +80,22 @@ class ApiGateway {
         // Public proxy endpoint
         this.app.get('/api/proxy-media', async (req, res) => {
             const { key } = req.query;
+            console.log('Proxy request for key:', key);
             if (!key || typeof key !== 'string') {
                 return res.status(400).send("Missing key");
             }
 
             try {
                 const { getS3Object } = await import('./storage.js');
+                console.log('Fetching S3 object for key:', key);
                 const { Body, ContentType } = await getS3Object(key);
+                console.log('S3 object fetched, ContentType:', ContentType);
                 if (ContentType) res.setHeader('Content-Type', ContentType);
                 res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
                 Body.pipe(res);
+                console.log('Piping S3 object to response');
             } catch (e) {
+                console.error('Proxy error for key:', key, e.message);
                 res.status(404).send("Not Found");
             }
         });
@@ -97,13 +110,13 @@ class ApiGateway {
             const authRoutes = await import('../routes/authRoutes.js');
             this.app.use('/api/auth', authRoutes.default);
 
-            // Event routes (protected)
+            // Event routes (individual routes handle their own auth)
             const eventRoutes = await import('../routes/eventRoutes.js');
-            this.app.use('/api/events', authenticateToken, eventRoutes.default);
+            this.app.use('/api/events', eventRoutes.default);
 
-            // Media routes (protected)
+            // Media routes (protected/optional handled internally)
             const mediaRoutes = await import('../routes/mediaRoutes.js');
-            this.app.use('/api/media', authenticateToken, mediaRoutes.default);
+            this.app.use('/api/media', mediaRoutes.default);
 
             // User routes (protected)
             const userRoutes = await import('../routes/userRoutes.js');

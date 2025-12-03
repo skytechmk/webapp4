@@ -1,4 +1,5 @@
-import React, { useEffect } from 'react';
+import * as React from 'react';
+const { useEffect } = React;
 
 interface ShareTargetHandlerProps {
   onShareReceive: (text: string) => void;

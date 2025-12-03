@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import * as React from 'react';
+const { useState } = React;
 import { Globe, LogOut, User, Home, Settings, ShieldCheck, ArrowLeft, Menu, X } from 'lucide-react';
 import { User as UserType, UserRole, TranslateFn, Language, TIER_CONFIG } from '../types';
 

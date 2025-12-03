@@ -17,7 +17,7 @@ export const generateCaption = async (req, res) => {
             return res.status(400).json({ error: "No image data provided" });
         }
 
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-preview-09-2025" });
         const result = await model.generateContent([
             "Generate a short, creative caption for this image (max 50 characters):",
             {
@@ -47,7 +47,7 @@ export const generateEventDescription = async (req, res) => {
             return res.status(400).json({ error: "No title provided" });
         }
 
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-preview-09-2025" });
         const prompt = `Generate a short, engaging description for an event titled "${title}"${theme ? ` with theme "${theme}"` : ''}. Keep it under 100 characters.`;
 
         const result = await model.generateContent(prompt);

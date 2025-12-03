@@ -38,6 +38,23 @@ export const createPerformanceIndexes = () => {
         else console.log('✓ Created idx_media_privacy');
     });
 
+    // Additional critical performance indexes
+    db.run(`CREATE INDEX IF NOT EXISTS idx_media_uploader_id ON media(uploaderId)`, (err) => {
+        if (err) console.error('Error creating idx_media_uploader_id:', err);
+        else console.log('✓ Created idx_media_uploader_id');
+    });
+
+    db.run(`CREATE INDEX IF NOT EXISTS idx_media_type ON media(type)`, (err) => {
+        if (err) console.error('Error creating idx_media_type:', err);
+        else console.log('✓ Created idx_media_type');
+    });
+
+    // Composite index for event media queries (most common query pattern)
+    db.run(`CREATE INDEX IF NOT EXISTS idx_media_event_type_uploaded ON media(eventId, type, uploadedAt DESC)`, (err) => {
+        if (err) console.error('Error creating idx_media_event_type_uploaded:', err);
+        else console.log('✓ Created idx_media_event_type_uploaded');
+    });
+
     // Note: events table doesn't have createdAt column, using id as ordering proxy
     // Composite index for host filtering (SQLite will use this for ordering)
     db.run(`CREATE INDEX IF NOT EXISTS idx_events_host_id ON events(hostId)`, (err) => {
@@ -45,9 +62,45 @@ export const createPerformanceIndexes = () => {
         else console.log('✓ Created idx_events_host_id');
     });
 
+    // Additional event indexes for better performance
+    db.run(`CREATE INDEX IF NOT EXISTS idx_events_date ON events(date DESC)`, (err) => {
+        if (err) console.error('Error creating idx_events_date:', err);
+        else console.log('✓ Created idx_events_date');
+    });
+
+    db.run(`CREATE INDEX IF NOT EXISTS idx_events_city ON events(city)`, (err) => {
+        if (err) console.error('Error creating idx_events_city:', err);
+        else console.log('✓ Created idx_events_city');
+    });
+
+    // Composite index for event media queries
     db.run(`CREATE INDEX IF NOT EXISTS idx_media_event_uploaded ON media(eventId, uploadedAt DESC)`, (err) => {
         if (err) console.error('Error creating idx_media_event_uploaded:', err);
         else console.log('✓ Created idx_media_event_uploaded');
+    });
+
+    // Index for user lookups by email (common authentication pattern)
+    db.run(`CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)`, (err) => {
+        if (err) console.error('Error creating idx_users_email:', err);
+        else console.log('✓ Created idx_users_email');
+    });
+
+    // Index for user tier (for premium feature filtering)
+    db.run(`CREATE INDEX IF NOT EXISTS idx_users_tier ON users(tier)`, (err) => {
+        if (err) console.error('Error creating idx_users_tier:', err);
+        else console.log('✓ Created idx_users_tier');
+    });
+
+    // Index for comments by event (common query pattern)
+    db.run(`CREATE INDEX IF NOT EXISTS idx_comments_event_id ON comments(eventId)`, (err) => {
+        if (err) console.error('Error creating idx_comments_event_id:', err);
+        else console.log('✓ Created idx_comments_event_id');
+    });
+
+    // Index for comments by creation time (for sorting)
+    db.run(`CREATE INDEX IF NOT EXISTS idx_comments_created_at ON comments(createdAt DESC)`, (err) => {
+        if (err) console.error('Error creating idx_comments_created_at:', err);
+        else console.log('✓ Created idx_comments_created_at');
     });
 
     // Indexes for guestbook table

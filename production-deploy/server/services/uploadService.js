@@ -15,7 +15,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const uploadDir = path.join(__dirname, '../../server/uploads');
 
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
+if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+}
 
 // Upload queue for background processing
 class UploadQueue {
@@ -57,7 +59,6 @@ export const processFileUpload = async (file, metadata, userId = null) => {
     const eventId = metadata.eventId;
     const isVideo = metadata.type === 'video';
 
-    console.log(`🎬 Starting upload processing for ${uploadId}`);
 
     // Initialize progress tracking
     uploadProgress.set(uploadId, { status: 'processing', progress: 0 });
@@ -92,18 +93,47 @@ export const processFileUpload = async (file, metadata, userId = null) => {
             await updateStorageUsage(userId, file.size);
         }
 
-        // Invalidate event media cache
+        // Invalidate caches
         await cacheService.invalidateEventMedia(eventId);
+        await cacheService.invalidateUserEvents(userId);
 
         // Mark as completed
         uploadProgress.set(uploadId, { status: 'completed', progress: 100 });
         notifyUploadProgress(eventId, uploadId, 'completed', 100);
 
-        console.log(`✅ Upload completed for ${uploadId}`);
+        // Emit media_uploaded event for real-time updates
+        const io = getIo();
+        if (io) {
+            // Get the complete media item from database
+            db.get("SELECT * FROM media WHERE id = ?", [uploadId], (err, mediaItem) => {
+                if (!err && mediaItem) {
+                    // Format the media item for client
+                    const formattedItem = {
+                        id: mediaItem.id,
+                        eventId: mediaItem.eventId,
+                        type: mediaItem.type,
+                        url: mediaItem.url,
+                        previewUrl: mediaItem.previewUrl,
+                        caption: mediaItem.caption,
+                        uploadedAt: mediaItem.uploadedAt,
+                        uploaderName: mediaItem.uploaderName,
+                        uploaderId: mediaItem.uploaderId,
+                        likes: mediaItem.likes || 0,
+                        privacy: mediaItem.privacy || 'public',
+                        isWatermarked: !!mediaItem.isWatermarked,
+                        watermarkText: mediaItem.watermarkText,
+                        isProcessing: false
+                    };
+    
+                    // Emit to clients in the event room
+                    io.to(eventId).emit('media_uploaded', formattedItem);
+                }
+            });
+        }
+
         return { success: true, uploadId };
 
     } catch (error) {
-        console.error(`❌ Upload failed for ${uploadId}:`, error);
 
         // Mark as failed
         uploadProgress.set(uploadId, { status: 'failed', progress: 0, error: error.message });
@@ -163,42 +193,73 @@ const insertMediaRecord = async (metadata, s3Key, previewKey, userId) => {
 };
 
 const processImageUpload = async (file, s3Key, previewKey, eventId, uploadId) => {
-    console.log(`🖼️ Processing image upload for ${uploadId}`);
 
     // Create thumbnail
     const previewPath = path.join(uploadDir, `thumb_${uploadId}.jpg`);
+    let thumbnailCreated = false;
 
     try {
-        await sharp(file.path)
-            .resize(400, 400, { fit: 'inside', withoutEnlargement: true })
-            .jpeg({ quality: 80, progressive: true })
-            .toFile(previewPath);
+        // Ensure upload directory exists
+        if (!fs.existsSync(uploadDir)) {
+            fs.mkdirSync(uploadDir, { recursive: true });
+        }
 
-        console.log(`📤 Uploading image and thumbnail to S3 for ${uploadId}`);
 
-        // Upload both files in parallel
-        await Promise.all([
-            uploadToS3(file.path, s3Key, file.mimetype),
-            uploadToS3(previewPath, previewKey, 'image/jpeg')
-        ]);
+        // Create thumbnail with error handling
+        try {
+            await sharp(file.path)
+                .rotate() // Auto-rotate based on EXIF orientation
+                .resize(400, 400, { fit: 'inside', withoutEnlargement: true })
+                .jpeg({ quality: 80, progressive: true })
+                .toFile(previewPath);
+            thumbnailCreated = true;
+        } catch (sharpError) {
+            throw new Error(`Image processing failed: ${sharpError.message}`);
+        }
+
+
+        // Upload both files in parallel (don't auto-delete, we'll handle cleanup)
+        try {
+            await Promise.all([
+                uploadToS3(file.path, s3Key, file.mimetype, false),
+                uploadToS3(previewPath, previewKey, 'image/jpeg', false)
+            ]);
+        } catch (s3Error) {
+            console.error(`❌ S3 upload failed for ${uploadId}:`, s3Error);
+            throw new Error(`Storage upload failed: ${s3Error.message}`);
+        }
 
         // Update progress
         notifyUploadProgress(eventId, uploadId, 'uploading', 75);
 
-        // Cleanup temp files
-        fs.unlinkSync(previewPath);
 
-        console.log(`✅ Image upload completed for ${uploadId}`);
+        // Emit media_processed event for real-time updates
+        const io = getIo();
+        if (io) {
+            io.to(eventId).emit('media_processed', {
+                id: uploadId,
+                previewUrl: previewKey,
+                url: s3Key
+            });
+        }
 
     } catch (error) {
-        // Cleanup on error
-        if (fs.existsSync(previewPath)) fs.unlinkSync(previewPath);
         throw error;
+    } finally {
+        // Cleanup temp files - only delete if they exist
+        try {
+            if (thumbnailCreated && fs.existsSync(previewPath)) {
+                fs.unlinkSync(previewPath);
+            }
+            if (fs.existsSync(file.path)) {
+                fs.unlinkSync(file.path);
+            }
+        } catch (cleanupError) {
+        }
     }
 };
 
 const processVideoUpload = async (file, s3Key, previewKey, eventId, uploadId) => {
-    console.log(`🎥 Processing video upload for ${uploadId}`);
 
     return new Promise((resolve, reject) => {
         const inputPath = file.path;
@@ -206,6 +267,7 @@ const processVideoUpload = async (file, s3Key, previewKey, eventId, uploadId) =>
 
         // Update progress
         notifyUploadProgress(eventId, uploadId, 'processing', 25);
+
 
         const ffmpeg = spawn('ffmpeg', [
             '-i', inputPath,
@@ -219,24 +281,42 @@ const processVideoUpload = async (file, s3Key, previewKey, eventId, uploadId) =>
             outputPath
         ]);
 
+        // Capture ffmpeg stderr for debugging
+        let stderr = '';
+        ffmpeg.stderr.on('data', (data) => {
+            stderr += data.toString();
+        });
+
         ffmpeg.on('close', async (code) => {
             try {
                 if (code === 0) {
-                    console.log(`📤 Uploading video and preview to S3 for ${uploadId}`);
 
-                    // Upload both files
-                    await Promise.all([
-                        uploadToS3(inputPath, s3Key, file.mimetype),
-                        uploadToS3(outputPath, previewKey, 'video/mp4')
-                    ]);
+                    // Upload both files (don't auto-delete, we'll handle cleanup)
+                    try {
+                        await Promise.all([
+                            uploadToS3(inputPath, s3Key, file.mimetype, false),
+                            uploadToS3(outputPath, previewKey, 'video/mp4', false)
+                        ]);
+                    } catch (s3Error) {
+                        throw new Error(`Storage upload failed: ${s3Error.message}`);
+                    }
 
                     // Update database
                     db.run("UPDATE media SET isProcessing = 0, previewUrl = ? WHERE id = ?", [previewKey, uploadId]);
 
+                    // Emit media_processed event for real-time updates
+                    const io = getIo();
+                    if (io) {
+                        io.to(eventId).emit('media_processed', {
+                            id: uploadId,
+                            previewUrl: previewKey,
+                            url: s3Key
+                        });
+                    }
+
                     // Notify completion
                     notifyUploadProgress(eventId, uploadId, 'completed', 100);
 
-                    console.log(`✅ Video upload completed for ${uploadId}`);
                     resolve();
                 } else {
                     throw new Error(`FFmpeg failed with code ${code}`);
@@ -251,7 +331,6 @@ const processVideoUpload = async (file, s3Key, previewKey, eventId, uploadId) =>
         });
 
         ffmpeg.on('error', (err) => {
-            console.error(`FFmpeg error for ${uploadId}:`, err);
             reject(err);
         });
     });

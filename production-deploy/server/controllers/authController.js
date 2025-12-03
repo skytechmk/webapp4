@@ -165,7 +165,6 @@ export const logout = async (req, res) => {
 
         res.json({ success: true });
     } catch (error) {
-        console.error('Logout error:', error);
         res.status(500).json({ error: 'Logout failed' });
     }
 };
@@ -182,7 +181,6 @@ export const refreshToken = async (req, res) => {
         const newToken = authService.refreshToken(oldToken);
         res.json({ token: newToken });
     } catch (error) {
-        console.error('Token refresh error:', error);
         res.status(401).json({ error: 'Token refresh failed' });
     }
 };
@@ -192,7 +190,6 @@ export const validateSession = async (req, res) => {
         const user = await authService.validateSession(req.user.id);
         res.json({ user });
     } catch (error) {
-        console.error('Session validation error:', error);
         res.status(401).json({ error: 'Invalid session' });
     }
 };

@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
+import * as React from 'react';
+const { useState, useEffect, useRef } = React;
 import { X, Send, MessageCircle, User, Shield } from 'lucide-react';
 import { socketService } from '../services/socketService';
 import { api } from '../services/api';

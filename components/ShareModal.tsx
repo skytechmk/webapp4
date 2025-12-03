@@ -1,4 +1,4 @@
-import React from 'react';
+import * as React from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { X, Copy, Check, Link as LinkIcon, Download, MessageCircle, Share2 } from 'lucide-react';
 import { TranslateFn } from '../types';

@@ -142,6 +142,17 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     downloadReady: "Download Ready",
     zipError: "Error creating zip file.",
     slideshow: "Slideshow",
+    preparingDownload: "Preparing Download",
+    progress: "Progress",
+    filesProcessed: "Files Processed",
+    estimatedSize: "Estimated Size",
+    currentFile: "Current File",
+    downloadError: "Download Error",
+    showDetails: "Details",
+    hideDetails: "Hide",
+    compressionLevel: "Compression",
+    processingMethod: "Method",
+    memoryUsage: "Memory",
     exitSlideshow: "Exit Slideshow",
     play: "Play",
     pause: "Pause",
@@ -255,7 +266,7 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     holiday: "Holiday",
     sports: "Sports",
     concert: "Concert",
-    
+
     // NEW LANDING PAGE KEYS
     step1Title: "Create Event",
     step1Desc: "Set up your event in seconds. Choose a theme and privacy settings.",
@@ -1224,8 +1235,8 @@ export const EVENT_THEMES = [
 ];
 
 export const HERO_IMAGES = [
-  "https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&q=80&w=1920", 
-  "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&q=80&w=1920", 
-  "https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?auto=format&fit=crop&q=80&w=1920", 
+  "https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&q=80&w=1920",
+  "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&q=80&w=1920",
+  "https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?auto=format&fit=crop&q=80&w=1920",
   "https://images.unsplash.com/photo-1513151233558-d860c5398176?auto=format&fit=crop&q=80&w=1920"
 ];

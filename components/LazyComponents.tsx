@@ -1,4 +1,5 @@
-import React, { lazy, Suspense } from 'react';
+import * as React from 'react';
+const { lazy, Suspense } = React;
 
 // Lazy load heavy components to improve initial bundle size
 export const LazyAdminDashboard = lazy(() => import('./AdminDashboard').then(module => ({ default: module.AdminDashboard })));

@@ -1,6 +1,7 @@
 
 
-import React, { useState, useRef } from 'react';
+import * as React from 'react';
+const { useState, useRef } = React;
 import { X, Upload, Briefcase, Image as ImageIcon, Trash2, Save, Eye, LayoutGrid } from 'lucide-react';
 import { User, TranslateFn, WatermarkPosition, TIER_CONFIG } from '../types';
 

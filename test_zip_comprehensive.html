@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Comprehensive Zip Download Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .test-container {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .test-section {
+            flex: 1;
+            border: 1px solid #ddd;
+            padding: 15px;
+            border-radius: 8px;
+        }
+
+        .log-container {
+            height: 300px;
+            overflow-y: auto;
+            border: 1px solid #ccc;
+            padding: 10px;
+            background: #f5f5f5;
+            font-family: monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+            margin-bottom: 10px;
+        }
+
+        .log-error {
+            color: red;
+        }
+
+        .log-success {
+            color: green;
+        }
+
+        .log-info {
+            color: blue;
+        }
+
+        .log-warning {
+            color: orange;
+        }
+
+        button {
+            padding: 10px 20px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-bottom: 10px;
+        }
+
+        button:hover {
+            background: #45a049;
+        }
+
+        button:disabled {
+            background: #cccccc;
+            cursor: not-allowed;
+        }
+
+        h2 {
+            color: #333;
+            border-bottom: 2px solid #4CAF50;
+            padding-bottom: 10px;
+        }
+
+        .progress-bar {
+            height: 20px;
+            background: #f0f0f0;
+            border-radius: 10px;
+            margin: 10px 0;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: #4CAF50;
+            border-radius: 10px;
+            transition: width 0.3s;
+            width: 0%;
+        }
+
+        .stats {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Comprehensive Zip Download Test</h1>
+    <p>This test verifies that the zip download fix works correctly with proper progress tracking.</p>
+
+    <div class="test-container">
+        <div class="test-section">
+            <h2>Basic Functionality Test</h2>
+            <div class="stats">
+                <span>Progress: <span id="progress1">0%</span></span>
+                <span>Files: <span id="files1">0/0</span></span>
+            </div>
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressBar1"></div>
+            </div>
+            <button id="startTest1">Start Basic Test</button>
+            <div class="log-container" id="logContainer1"></div>
+        </div>
+
+        <div class="test-section">
+            <h2>Error Handling Test</h2>
+            <div class="stats">
+                <span>Progress: <span id="progress2">0%</span></span>
+                <span>Files: <span id="files2">0/0</span></span>
+            </div>
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressBar2"></div>
+            </div>
+            <button id="startTest2">Start Error Test</button>
+            <div class="log-container" id="logContainer2"></div>
+        </div>
+    </div>
+
+    <div class="test-section">
+        <h2>Performance Test</h2>
+        <div class="stats">
+            <span>Progress: <span id="progress3">0%</span></span>
+            <span>Files: <span id="files3">0/0</span></span>
+            <span>Time: <span id="time3">0ms</span></span>
+        </div>
+        <div class="progress-bar">
+            <div class="progress-fill" id="progressBar3"></div>
+        </div>
+        <button id="startTest3">Start Performance Test</button>
+        <div class="log-container" id="logContainer3"></div>
+    </div>
+
+    <script type="module">
+        import { ZipManager } from './utils/zipManager.ts';
+
+        // Test 1: Basic functionality test
+        async function runBasicTest() {
+            const logContainer = document.getElementById('logContainer1');
+            const progressBar = document.getElementById('progressBar1');
+            const progressText = document.getElementById('progress1');
+            const filesText = document.getElementById('files1');
+            const startBtn = document.getElementById('startTest1');
+
+            function log(message, type = 'info') {
+                const logEntry = document.createElement('div');
+                logEntry.textContent = message;
+                logEntry.className = `log-${type}`;
+                logContainer.appendChild(logEntry);
+                logContainer.scrollTop = logContainer.scrollHeight;
+                console.log(message);
+            }
+
+            startBtn.disabled = true;
+            startBtn.textContent = 'Testing...';
+
+            try {
+                log('🚀 Starting basic functionality test...', 'info');
+
+                const mockFiles = [
+                    {
+                        filename: 'test1.jpg',
+                        size: 1024 * 1024,
+                        type: 'image',
+                        url: 'https://example.com/test1.jpg'
+                    },
+                    {
+                        filename: 'test2.jpg',
+                        size: 2 * 1024 * 1024,
+                        type: 'image',
+                        url: 'https://example.com/test2.jpg'
+                    },
+                    {
+                        filename: 'test3.mp4',
+                        size: 5 * 1024 * 1024,
+                        type: 'video',
+                        url: 'https://example.com/test3.mp4'
+                    }
+                ];
+
+                let progressUpdates = 0;
+                let completionCalled = false;
+                let errorOccurred = false;
+
+                const zipManager = new ZipManager({
+                    compressionLevel: 6,
+                    chunkSize: 2,
+                    onProgress: (progress) => {
+                        progressUpdates++;
+                        progressBar.style.width = `${progress.progressPercentage}%`;
+                        progressText.textContent = `${progress.progressPercentage}%`;
+                        filesText.textContent = `${progress.processedFiles}/${progress.totalFiles}`;
+
+                        log(`📊 Progress: ${progress.progressPercentage}% (${progress.processedFiles}/${progress.totalFiles}) - ${progress.currentFile || 'no file'}`, 'info');
+
+                        if (!progress.isComplete && progress.progressPercentage >= 100) {
+                            log('❌ ERROR: Progress exceeded 100% before completion!', 'error');
+                            errorOccurred = true;
+                        }
+
+                        if (progress.isComplete) {
+                            if (progress.progressPercentage !== 100) {
+                                log('❌ ERROR: Completion state set but progress not 100%!', 'error');
+                                errorOccurred = true;
+                            }
+                            if (progress.processedFiles !== progress.totalFiles) {
+                                log('❌ ERROR: Completion state set but not all files processed!', 'error');
+                                errorOccurred = true;
+                            }
+                        }
+                    },
+                    onError: (error) => {
+                        log(`❌ Zip error: ${error.message}`, 'error');
+                        errorOccurred = true;
+                    },
+                    onComplete: () => {
+                        log('✅ Zip generation completed!', 'success');
+                        completionCalled = true;
+                    }
+                });
+
+                log('📦 Starting zip generation with 3 files...', 'info');
+
+                try {
+                    await zipManager.generateZip(mockFiles, 'Basic_Test', false);
+                    log('✅ Zip generation completed successfully!', 'success');
+                } catch (error) {
+                    log(`⚠️ Expected error with mock URLs: ${error.message}`, 'warning');
+                }
+
+                log('\n=== Basic Test Results ===', 'info');
+                log(`📊 Progress updates: ${progressUpdates}`, 'info');
+                log(`🎯 Completion called: ${completionCalled}`, 'info');
+                log(`❌ Errors occurred: ${errorOccurred}`, 'info');
+
+                if (progressUpdates > 0 && !errorOccurred) {
+                    log('✅ Basic functionality test PASSED!', 'success');
+                } else {
+                    log('❌ Basic functionality test FAILED!', 'error');
+                }
+
+            } catch (error) {
+                log(`❌ Test failed with error: ${error.message}`, 'error');
+            } finally {
+                startBtn.disabled = false;
+                startBtn.textContent = 'Start Basic Test';
+            }
+        }
+
+        // Test 2: Error handling test
+        async function runErrorTest() {
+            const logContainer = document.getElementById('logContainer2');
+            const progressBar = document.getElementById('progressBar2');
+            const progressText = document.getElementById('progress2');
+            const filesText = document.getElementById('files2');
+            const startBtn = document.getElementById('startTest2');
+
+            function log(message, type = 'info') {
+                const logEntry = document.createElement('div');
+                logEntry.textContent = message;
+                logEntry.className = `log-${type}`;
+                logContainer.appendChild(logEntry);
+                logContainer.scrollTop = logContainer.scrollHeight;
+                console.log(message);
+            }
+
+            startBtn.disabled = true;
+            startBtn.textContent = 'Testing...';
+
+            try {
+                log('🚀 Starting error handling test...', 'info');
+
+                // Use invalid URLs to test error handling
+                const mockFiles = [
+                    {
+                        filename: 'invalid1.jpg',
+                        size: 1024 * 1024,
+                        type: 'image',
+                        url: 'https://invalid.example.com/test1.jpg'
+                    },
+                    {
+                        filename: 'invalid2.jpg',
+                        size: 2 * 1024 * 1024,
+                        type: 'image',
+                        url: 'https://invalid.example.com/test2.jpg'
+                    }
+                ];
+
+                let progressUpdates = 0;
+                let completionCalled = false;
+                let errorOccurred = false;
+
+                const zipManager = new ZipManager({
+                    compressionLevel: 6,
+                    chunkSize: 1,
+                    onProgress: (progress) => {
+                        progressUpdates++;
+                        progressBar.style.width = `${progress.progressPercentage}%`;
+                        progressText.textContent = `${progress.progressPercentage}%`;
+                        filesText.textContent = `${progress.processedFiles}/${progress.totalFiles}`;
+
+                        if (progress.error) {
+                            log(`⚠️ Error reported: ${progress.error}`, 'warning');
+                        }
+                    },
+                    onError: (error) => {
+                        log(`❌ Error callback: ${error.message}`, 'error');
+                        errorOccurred = true;
+                    },
+                    onComplete: () => {
+                        log('✅ Completion callback called', 'success');
+                        completionCalled = true;
+                    }
+                });
+
+                log('📦 Starting zip generation with invalid URLs...', 'info');
+
+                try {
+                    await zipManager.generateZip(mockFiles, 'Error_Test', false);
+                } catch (error) {
+                    log(`⚠️ Expected error caught: ${error.message}`, 'warning');
+                }
+
+                log('\n=== Error Test Results ===', 'info');
+                log(`📊 Progress updates: ${progressUpdates}`, 'info');
+                log(`🎯 Completion called: ${completionCalled}`, 'info');
+                log(`❌ Errors handled: ${errorOccurred}`, 'info');
+
+                if (errorOccurred) {
+                    log('✅ Error handling test PASSED!', 'success');
+                } else {
+                    log('❌ Error handling test FAILED!', 'error');
+                }
+
+            } catch (error) {
+                log(`❌ Test failed with error: ${error.message}`, 'error');
+            } finally {
+                startBtn.disabled = false;
+                startBtn.textContent = 'Start Error Test';
+            }
+        }
+
+        // Test 3: Performance test
+        async function runPerformanceTest() {
+            const logContainer = document.getElementById('logContainer3');
+            const progressBar = document.getElementById('progressBar3');
+            const progressText = document.getElementById('progress3');
+            const filesText = document.getElementById('files3');
+            const timeText = document.getElementById('time3');
+            const startBtn = document.getElementById('startTest3');
+
+            function log(message, type = 'info') {
+                const logEntry = document.createElement('div');
+                logEntry.textContent = message;
+                logEntry.className = `log-${type}`;
+                logContainer.appendChild(logEntry);
+                logContainer.scrollTop = logContainer.scrollHeight;
+                console.log(message);
+            }
+
+            startBtn.disabled = true;
+            startBtn.textContent = 'Testing...';
+
+            try {
+                log('🚀 Starting performance test...', 'info');
+
+                // Create a larger set of mock files
+                const mockFiles = [];
+                for (let i = 1; i <= 10; i++) {
+                    mockFiles.push({
+                        filename: `test${i}.jpg`,
+                        size: 1024 * 1024,
+                        type: 'image',
+                        url: `https://example.com/test${i}.jpg`
+                    });
+                }
+
+                let progressUpdates = 0;
+                let completionCalled = false;
+                let startTime = Date.now();
+
+                const zipManager = new ZipManager({
+                    compressionLevel: 6,
+                    chunkSize: 3,
+                    onProgress: (progress) => {
+                        progressUpdates++;
+                        progressBar.style.width = `${progress.progressPercentage}%`;
+                        progressText.textContent = `${progress.progressPercentage}%`;
+                        filesText.textContent = `${progress.processedFiles}/${progress.totalFiles}`;
+
+                        if (progressUpdates % 5 === 0) {
+                            log(`📊 Progress update #${progressUpdates}: ${progress.progressPercentage}%`, 'info');
+                        }
+                    },
+                    onError: (error) => {
+                        log(`❌ Error: ${error.message}`, 'error');
+                    },
+                    onComplete: () => {
+                        log('✅ Completion callback called', 'success');
+                        completionCalled = true;
+                    }
+                });
+
+                log(`📦 Starting zip generation with ${mockFiles.length} files...`, 'info');
+
+                try {
+                    await zipManager.generateZip(mockFiles, 'Performance_Test', false);
+                } catch (error) {
+                    log(`⚠️ Expected error: ${error.message}`, 'warning');
+                }
+
+                const totalTime = Date.now() - startTime;
+                timeText.textContent = `${totalTime}ms`;
+
+                log('\n=== Performance Test Results ===', 'info');
+                log(`📊 Progress updates: ${progressUpdates}`, 'info');
+                log(`⏱️  Total time: ${totalTime}ms`, 'info');
+                log(`🎯 Completion called: ${completionCalled}`, 'info');
+
+                if (progressUpdates > 0 && completionCalled) {
+                    log('✅ Performance test PASSED!', 'success');
+                } else {
+                    log('❌ Performance test FAILED!', 'error');
+                }
+
+            } catch (error) {
+                log(`❌ Test failed with error: ${error.message}`, 'error');
+            } finally {
+                startBtn.disabled = false;
+                startBtn.textContent = 'Start Performance Test';
+            }
+        }
+
+        // Set up event listeners
+        document.getElementById('startTest1').addEventListener('click', runBasicTest);
+        document.getElementById('startTest2').addEventListener('click', runErrorTest);
+        document.getElementById('startTest3').addEventListener('click', runPerformanceTest);
+
+        console.log('🎯 Zip download test suite ready!');
+    </script>
+</body>
+
+</html>

@@ -39,10 +39,7 @@ class ProcessQueue {
 const videoQueue = new ProcessQueue(2);
 
 export const uploadMedia = async (req, res) => {
-    console.log('Upload attempt:', { file: req.file ? req.file.originalname : 'none', body: req.body });
-
     if (!req.file) {
-        console.log('Upload failed: No file provided');
         return res.status(400).json({ error: 'No file provided' });
     }
 
@@ -52,7 +49,6 @@ export const uploadMedia = async (req, res) => {
     // Validate uploader identity
     if (req.user) {
         if (uploaderId !== req.user.id) {
-            console.log('Upload failed: Identity mismatch', { uploaderId, userId: req.user.id });
             return res.status(403).json({ error: "Identity mismatch" });
         }
     } else {
@@ -63,6 +59,7 @@ export const uploadMedia = async (req, res) => {
 
     try {
         // Queue the upload for background processing
+
         const result = await queueFileUpload(req.file, {
             id: body.id,
             eventId: body.eventId,
@@ -75,6 +72,7 @@ export const uploadMedia = async (req, res) => {
             privacy: body.privacy || 'public'
         }, req.user?.id);
 
+
         // Return immediate response with upload ID
         res.json({
             uploadId: result.uploadId,
@@ -83,11 +81,10 @@ export const uploadMedia = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Upload queue failed:', error);
 
         // Cleanup temp file
         if (req.file && req.file.path) {
-            fs.unlink(req.file.path, () => {});
+            fs.unlink(req.file.path, () => { });
         }
 
         res.status(500).json({
@@ -138,6 +135,55 @@ export const bulkDeleteMedia = async (req, res) => {
         });
         await Promise.all(deletePromises);
         res.json({ success: true, deletedCount });
+    });
+};
+
+export const getMediaById = (req, res) => {
+    db.get(`
+        SELECT
+            media.*,
+            events.title as eventTitle,
+            events.hostId,
+            users.name as hostName,
+            users.tier as hostTier
+        FROM media
+        JOIN events ON media.eventId = events.id
+        LEFT JOIN users ON events.hostId = users.id
+        WHERE media.id = ?
+    `, [req.params.id], (err, row) => {
+        if (err) return res.status(500).json({ error: err.message });
+        if (!row) return res.status(404).json({ error: "Media not found" });
+
+        // Check privacy permissions
+        if (row.privacy === 'private') {
+            // Allow access if user is the uploader, host, or admin
+            const hasAccess = req.user?.role === 'ADMIN' ||
+                req.user?.id === row.uploaderId ||
+                req.user?.id === row.hostId;
+            if (!hasAccess) {
+                return res.status(403).json({ error: "Access denied" });
+            }
+        }
+
+        // Format the response
+        const mediaItem = {
+            id: row.id,
+            eventId: row.eventId,
+            type: row.type,
+            url: getPublicUrl(row.url),
+            previewUrl: row.previewUrl ? getPublicUrl(row.previewUrl) : null,
+            caption: row.caption,
+            uploadedAt: row.uploadedAt,
+            uploaderName: row.uploaderName,
+            uploaderId: row.uploaderId,
+            likes: row.likes || 0,
+            privacy: row.privacy || 'public',
+            isWatermarked: !!row.isWatermarked,
+            watermarkText: row.watermarkText,
+            isProcessing: !!row.isProcessing
+        };
+
+        res.json(mediaItem);
     });
 };
 

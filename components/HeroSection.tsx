@@ -4,7 +4,8 @@ declare global {
         googleSignInInitialized?: boolean;
     }
 }
-import React, { useState, useEffect, useRef, memo } from 'react';
+import * as React from 'react';
+const { useState, useEffect, useRef, memo } = React;
 import {
     ArrowRight, Play
 } from 'lucide-react';

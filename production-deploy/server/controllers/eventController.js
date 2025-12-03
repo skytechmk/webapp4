@@ -15,10 +15,11 @@ async function attachPublicUrls(mediaList) {
 
 export const getEvents = async (req, res) => {
     try {
-        const cacheKey = req.user.role === 'ADMIN' ? 'admin_events' : `user_events_${req.user.id}`;
+        const userId = req.user.role === 'ADMIN' ? 'admin' : req.user.id;
+        const cacheKey = `user_events:${userId}`;
 
         // Try to get from cache first
-        let events = await cacheService.getUserEvents(req.user.role === 'ADMIN' ? 'admin' : req.user.id);
+        let events = await cacheService.getUserEvents(userId);
 
         if (!events) {
             // Cache miss - fetch from database
@@ -39,7 +40,7 @@ export const getEvents = async (req, res) => {
 
             // Cache the results (5 minutes for user events, 2 minutes for admin)
             const ttl = req.user.role === 'ADMIN' ? 120 : 300;
-            await cacheService.setUserEvents(req.user.role === 'ADMIN' ? 'admin' : req.user.id, events, ttl);
+            await cacheService.setUserEvents(userId, events, ttl);
         } else {
             console.log(`✅ Cache hit for ${cacheKey}`);
         }
@@ -72,7 +73,7 @@ export const getEvents = async (req, res) => {
 
 export const getEventById = async (req, res) => {
     // Use index on events.id (primary key) and idx_events_expires_at for expiration check
-    db.get(`SELECT events.*, users.tier as hostTier FROM events LEFT JOIN users ON events.hostId = users.id WHERE events.id = ?`, [req.params.id], async (err, evt) => {
+    db.get(`SELECT events.*, users.tier as hostTier, users.id as hostUserId, users.name as hostUserName, users.role as hostUserRole FROM events LEFT JOIN users ON events.hostId = users.id WHERE events.id = ?`, [req.params.id], async (err, evt) => {
         if (err || !evt) return res.status(404).json({ error: "Not found" });
         if (evt.expiresAt && new Date(evt.expiresAt) < new Date()) {
             return res.status(410).json({ error: "Event expired" });
@@ -90,7 +91,23 @@ export const getEventById = async (req, res) => {
         let signedCover = evt.coverImage;
         if (evt.coverImage && !evt.coverImage.startsWith('http')) signedCover = getPublicUrl(evt.coverImage);
 
-        res.json({ ...evt, media: signedMedia, guestbook: guestbookResult, coverImage: signedCover, hasPin: !!evt.pin, pin: undefined });
+        // Include host user information for guest access
+        const hostUser = evt.hostUserId ? {
+            id: evt.hostUserId,
+            name: evt.hostUserName,
+            tier: evt.hostTier,
+            role: evt.hostUserRole
+        } : null;
+
+        res.json({
+            ...evt,
+            media: signedMedia,
+            guestbook: guestbookResult,
+            coverImage: signedCover,
+            hasPin: !!evt.pin,
+            pin: undefined,
+            hostUser // Add host user to response
+        });
     });
 };
 

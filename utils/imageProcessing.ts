@@ -53,10 +53,147 @@ const getOrientation = (file: File): Promise<number> => {
 // Alias for backward compatibility
 export const getExifOrientation = getOrientation;
 
-// Placeholder for applyWatermark - implement as needed
+import { imageProcessingWorker } from './imageProcessingWorker';
+
+// Enhanced applyWatermark using Web Worker with comprehensive error handling
 export const applyWatermark = async (imageSrc: string, watermarkText: string | null, logoUrl?: string | null, opacity?: number, size?: number, position?: string, offsetX?: number, offsetY?: number): Promise<string> => {
-  // For now, return the original image
-  return imageSrc;
+  // Input validation
+  if (!imageSrc || !imageSrc.startsWith('data:image/')) {
+    console.warn('Invalid image source for watermarking:', imageSrc);
+    return imageSrc;
+  }
+
+  if (!watermarkText || !watermarkText.trim()) {
+    console.warn('Empty watermark text provided');
+    return imageSrc;
+  }
+
+  // Set default parameters with validation
+  const effectiveOpacity = Math.min(Math.max(opacity || 0.5, 0.1), 0.9); // Clamp between 0.1 and 0.9
+  const effectiveSize = Math.min(Math.max(size || 30, 12), 100); // Clamp between 12 and 100
+  const effectivePosition = (position || 'center') as CanvasTextAlign;
+
+  try {
+    // Strategy 1: Try Web Worker with timeout
+    try {
+      console.log(`🔄 Attempting Web Worker watermark with text: "${watermarkText}"`);
+      const result = await Promise.race([
+        imageProcessingWorker.applyWatermark(imageSrc, watermarkText, {
+          font: `${effectiveSize}px Arial`,
+          color: `rgba(255, 255, 255, ${effectiveOpacity})`,
+          align: effectivePosition,
+          baseline: 'middle' as CanvasTextBaseline,
+          x: offsetX,
+          y: offsetY
+        }),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Web Worker watermark timeout')), 15000)
+        )
+      ]);
+
+      // Validate Web Worker result
+      if (result && typeof result === 'string' && result.startsWith('data:image/')) {
+        console.log('✅ Web Worker watermark successful');
+        return result;
+      } else {
+        throw new Error('Web Worker returned invalid result');
+      }
+    } catch (workerError) {
+      console.warn('⚠️ Web Worker watermark failed:', workerError.message);
+    }
+
+    // Strategy 2: Main thread implementation with enhanced error handling
+    console.log('🎨 Falling back to main thread watermark implementation');
+    return new Promise((resolve) => {
+      const img = new Image();
+
+      // Enhanced error handling
+      img.onload = () => {
+        try {
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d');
+
+          if (!ctx) {
+            console.error('Failed to get canvas context for watermarking');
+            resolve(imageSrc);
+            return;
+          }
+
+          // Set canvas dimensions with validation
+          if (img.width <= 0 || img.height <= 0) {
+            throw new Error(`Invalid image dimensions: ${img.width}x${img.height}`);
+          }
+
+          canvas.width = img.width;
+          canvas.height = img.height;
+
+          // Draw image with error handling
+          try {
+            ctx.drawImage(img, 0, 0);
+          } catch (drawError) {
+            console.error('Failed to draw image on canvas:', drawError);
+            resolve(imageSrc);
+            return;
+          }
+
+          // Apply watermark with bounds checking
+          if (watermarkText.trim()) {
+            try {
+              ctx.font = `${effectiveSize}px Arial`;
+              ctx.fillStyle = `rgba(255, 255, 255, ${effectiveOpacity})`;
+              ctx.textAlign = effectivePosition;
+              ctx.textBaseline = 'middle' as CanvasTextBaseline;
+
+              // Calculate position with bounds validation
+              const x = offsetX !== undefined ? offsetX : canvas.width / 2;
+              const y = offsetY !== undefined ? offsetY : canvas.height / 2;
+
+              // Ensure position is within canvas bounds
+              if (x >= 0 && x <= canvas.width && y >= 0 && y <= canvas.height) {
+                ctx.fillText(watermarkText, x, y);
+              } else {
+                console.warn(`Watermark position (${x}, ${y}) out of canvas bounds (${canvas.width}, ${canvas.height})`);
+                // Fallback to center position
+                ctx.fillText(watermarkText, canvas.width / 2, canvas.height / 2);
+              }
+            } catch (textError) {
+              console.error('Failed to apply watermark text:', textError);
+            }
+          }
+
+          // Generate result with validation
+          const result = canvas.toDataURL('image/jpeg', 0.85);
+          if (result && result.startsWith('data:image/jpeg;base64,')) {
+            resolve(result);
+          } else {
+            console.error('Generated invalid JPEG data URL');
+            resolve(imageSrc);
+          }
+        } catch (error) {
+          console.error('Main thread watermark failed:', error);
+          resolve(imageSrc);
+        }
+      };
+
+      img.onerror = () => {
+        console.error('Image failed to load for watermarking');
+        resolve(imageSrc);
+      };
+
+      // Set source with timeout
+      img.src = imageSrc;
+      setTimeout(() => {
+        if (!img.complete) {
+          console.warn('Image loading timed out for watermarking');
+          resolve(imageSrc);
+        }
+      }, 10000);
+    });
+
+  } catch (error) {
+    console.error('Final watermark fallback failed:', error);
+    return imageSrc;
+  }
 };
 
 export const createPhotoStrip = async (images: string[]): Promise<string> => {

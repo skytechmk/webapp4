@@ -1,5 +1,6 @@
 
-import React, { useState, useEffect } from 'react';
+import * as React from 'react';
+const { useState, useEffect } = React;
 import { X, User as UserIcon, Mail, Phone, MessageCircle, Smartphone, CheckCircle, AlertCircle, Crown, Zap, Star } from 'lucide-react';
 import { TranslateFn, TierLevel, PricingTier } from '../types';
 import { isMobileDevice, isIOS, isAndroid } from '../utils/deviceDetection';

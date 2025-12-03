@@ -1,4 +1,4 @@
-import React from 'react';
+import * as React from 'react';
 import { Vendor } from '../types';
 import { MapPin, ExternalLink, CheckCircle } from 'lucide-react';
 

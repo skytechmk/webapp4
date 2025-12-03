@@ -33,10 +33,24 @@ class MediaService {
             maxWidth = 1920,
             maxHeight = 1080,
             quality = 85,
-            format = 'jpeg'
+            format = 'jpeg',
+            watermarkText = null
         } = options;
 
         let sharpInstance = sharp(buffer);
+
+        // Auto-rotate based on EXIF orientation
+        sharpInstance = sharpInstance.rotate();
+
+        // Apply watermark if requested
+        if (watermarkText) {
+            const svgWatermark = Buffer.from(
+                `<svg width="800" height="100">
+                    <text x="50%" y="50%" text-anchor="middle" font-size="48" fill="white" opacity="0.3">${watermarkText}</text>
+                </svg>`
+            );
+            sharpInstance = sharpInstance.composite([{ input: svgWatermark, gravity: 'southeast' }]);
+        }
 
         // Get image metadata
         const metadata = await sharpInstance.metadata();

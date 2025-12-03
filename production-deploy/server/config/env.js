@@ -15,7 +15,7 @@ export const config = {
         PASS: process.env.SMTP_PASS
     },
     ALLOWED_ORIGINS: process.env.NODE_ENV === 'production'
-        ? (process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : ['https://snapify.skytech.mk'])
+        ? (process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : ['https://snapify.skytech.mk', 'https://www.snapify.skytech.mk', 'http://snapify.skytech.mk', 'http://www.snapify.skytech.mk'])
         : (process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : '*'),
     S3: {
         ENDPOINT: process.env.S3_ENDPOINT || 'http://192.168.20.153:9000',

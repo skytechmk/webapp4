@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
+import * as React from 'react';
+const { useState, useRef, useEffect } = React;
 
 interface LazyImageProps {
     src: string;

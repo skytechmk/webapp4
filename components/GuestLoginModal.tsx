@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import * as React from 'react';
+const { useState } = React;
 import { User as UserIcon, LogIn, Shield, Camera, Check } from 'lucide-react';
 import { TranslateFn } from '../types';
 
