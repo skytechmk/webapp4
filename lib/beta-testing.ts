@@ -8,7 +8,7 @@ import { getCurrentVersion, detectAppVersion } from '../utils/versionDetection';
 
 // Beta Testing Configuration
 export interface BetaConfig {
-  version: 'v2.1' | 'v2.1-native';
+  version: 'beta 2.2' | 'beta 2.2-native';
   features: BetaFeature[];
   enabled: boolean;
   betaAccessCode?: string;
@@ -26,7 +26,7 @@ export interface BetaFeature {
   enabled: boolean;
   requiresAuth: boolean;
   userRoles: UserRole[];
-  version: 'v2.1' | 'v2.1-native' | 'both';
+  version: 'beta 2.2' | 'beta 2.2-native' | 'both';
 }
 
 // Beta User Access
@@ -35,12 +35,12 @@ export interface BetaUserAccess {
   grantedAt: Date;
   features: string[];
   feedbackSubmitted: boolean;
-  version: 'v2.1' | 'v2.1-native';
+  version: 'beta 2.2' | 'beta 2.2-native';
 }
 
 // Default Beta Configuration
 export const defaultBetaConfig: BetaConfig = {
-  version: 'v2.1-native',
+  version: 'beta 2.2-native',
   features: [
     {
       id: 'ai-face-detection',
@@ -85,7 +85,7 @@ export const defaultBetaConfig: BetaConfig = {
       enabled: false,
       requiresAuth: true,
       userRoles: [UserRole.ADMIN],
-      version: 'v2.1-native'
+      version: 'beta 2.2-native'
     }
   ],
   enabled: true,
@@ -130,7 +130,7 @@ export class BetaTestingManager {
   /**
    * Detect current app version
    */
-  static getCurrentVersion(): 'v2.1' | 'v2.1-native' {
+  static getCurrentVersion(): 'beta 2.2' | 'beta 2.2-native' {
     return getCurrentVersion();
   }
 
@@ -204,7 +204,7 @@ export class BetaTestingManager {
   /**
    * Get all beta user access records
    */
-  private static getAllBetaUserAccess(): Record<string, BetaUserAccess> {
+  static getAllBetaUserAccess(): Record<string, BetaUserAccess> {
     if (typeof window === 'undefined') return {};
 
     const stored = localStorage.getItem(this.USER_ACCESS_KEY);

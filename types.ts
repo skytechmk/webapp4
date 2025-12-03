@@ -91,7 +91,7 @@ export interface User {
   // Beta testing fields
   betaAccess?: boolean;
   betaAccessGrantedAt?: string;
-  betaVersion?: 'v2.1' | 'v2.1-native';
+  betaVersion?: 'beta 2.2' | 'beta 2.2-native';
   betaFeatures?: string[];
   betaFeedbackSubmitted?: boolean;
 }

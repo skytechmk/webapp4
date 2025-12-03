@@ -14,7 +14,7 @@ export default defineConfig({
     }),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'masked-icon.svg'],
+      includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'masked-icon.svg', 'snapify-logo.png'],
       devOptions: {
         enabled: true
       },
@@ -29,17 +29,17 @@ export default defineConfig({
         start_url: '/',
         icons: [
           {
-            src: 'https://img.icons8.com/fluency/192/camera.png',
+            src: '/snapify-logo.png',
             sizes: '192x192',
             type: 'image/png'
           },
           {
-            src: 'https://img.icons8.com/fluency/512/camera.png',
+            src: '/snapify-logo.png',
             sizes: '512x512',
             type: 'image/png'
           },
           {
-            src: 'https://img.icons8.com/fluency/512/camera.png',
+            src: '/snapify-logo.png',
             sizes: '512x512',
             type: 'image/png',
             purpose: 'maskable'

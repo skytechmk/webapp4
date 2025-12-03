@@ -1,9 +1,9 @@
 /**
  * Version Detection Utility
- * Detects whether the app is running as v2.1 web or v2.1 Native
+ * Detects whether the app is running as beta 2.2 web or beta 2.2 Native
  */
 
-export type AppVersion = 'v2.1' | 'v2.1-native';
+export type AppVersion = 'beta 2.2' | 'beta 2.2-native';
 
 export interface VersionInfo {
   version: AppVersion;
@@ -19,7 +19,7 @@ export interface VersionInfo {
 export function detectAppVersion(): VersionInfo {
   if (typeof window === 'undefined') {
     return {
-      version: 'v2.1',
+      version: 'beta 2.2',
       isNative: false,
       platform: 'unknown',
       userAgent: '',
@@ -39,9 +39,9 @@ export function detectAppVersion(): VersionInfo {
 
   // Check for custom native app indicators
   const isSnapifyNative = userAgent.includes('SnapifyNative') ||
-                         userAgent.includes('Snapify/2.1') ||
-                         window.location.protocol === 'file:' ||
-                         (window.location.hostname === 'localhost' && window.location.port === '3000' && isElectron);
+    userAgent.includes('Snapify/2.2') ||
+    window.location.protocol === 'file:' ||
+    (window.location.hostname === 'localhost' && window.location.port === '3000' && isElectron);
 
   // Determine platform
   let detectedPlatform: 'web' | 'ios' | 'android' | 'electron' | 'unknown' = 'web';
@@ -56,7 +56,7 @@ export function detectAppVersion(): VersionInfo {
 
   // Determine version
   const isNative = detectedPlatform === 'ios' || detectedPlatform === 'android' || detectedPlatform === 'electron';
-  const version: AppVersion = isNative ? 'v2.1-native' : 'v2.1';
+  const version: AppVersion = isNative ? 'beta 2.2-native' : 'beta 2.2';
 
   // Detect available features based on platform
   const features: string[] = [];

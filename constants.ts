@@ -287,6 +287,36 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     statPhotos: "Photos Shared",
     statEvents: "Events Hosted",
 
+    // NEW LANDING PAGE KEYS FOR THE NEW DESIGN
+    continue_with: "Continue with Google",
+    features: "Features",
+    selectPlan: "Select Plan",
+    recommended: "Recommended",
+    pricingFeature1Event: "1 Event/Month",
+    pricingFeatureQR: "QR Code Gallery",
+    pricingFeatureWatermarked: "Watermarked",
+    pricingFeature7Day: "7 Day Retention",
+    pricingFeatureUnlimited: "Unlimited Events",
+    pricingFeatureFaceID: "FaceID Matching",
+    pricingFeatureNoWatermark: "No Watermark",
+    pricingFeature1Year: "1 Year Retention",
+    pricingFeatureInstant: "Instant Delivery",
+    pricingFeatureTeam: "Team Access",
+    pricingFeatureBranding: "Custom Branding",
+    pricingFeatureEmail: "Email Marketing",
+    pricingFeatureAnalytics: "Analytics Dashboard",
+    pricingFeatureSupport: "Priority Support",
+    ultimateEventCompanion: "The Ultimate Event Companion",
+
+    // BETA FEEDBACK SECTION
+    betaFeedbackTitle: "Help Us Improve",
+    betaFeedbackSubtitle: "Share your thoughts to make SnapifY better",
+    betaFeedbackPlaceholder: "What do you like or what could be improved?",
+    betaFeedbackSubmit: "Submit Feedback",
+    betaFeedbackThanks: "Thank you for your feedback!",
+    betaFeedbackError: "Please enter your feedback",
+    betaFeedbackCharLimit: "500 character limit",
+
     // BETA TESTING KEYS
     betaFeedback: "Beta Feedback",
     betaSettings: "Beta Settings",
@@ -625,6 +655,36 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     proDesc: "Подобрете го вашиот бизнис со моментална испорака и брендирање.",
     statPhotos: "Споделени Фотографии",
     statEvents: "Организирани Настани",
+
+    // NEW LANDING PAGE KEYS MK
+    continue_with: "Продолжи со Google",
+    features: "Карактеристики",
+    selectPlan: "Избери план",
+    recommended: "Препорачано",
+    pricingFeature1Event: "1 Настан/Месец",
+    pricingFeatureQR: "QR Код Галерија",
+    pricingFeatureWatermarked: "Со Воден Жиг",
+    pricingFeature7Day: "7 Дена Чување",
+    pricingFeatureUnlimited: "Неограничени Настани",
+    pricingFeatureFaceID: "FaceID Сопоставување",
+    pricingFeatureNoWatermark: "Без Воден Жиг",
+    pricingFeature1Year: "1 Година Чување",
+    pricingFeatureInstant: "Моментална Испорака",
+    pricingFeatureTeam: "Тимски Пристап",
+    pricingFeatureBranding: "Прилагодено Брендирање",
+    pricingFeatureEmail: "Емаил Маркетинг",
+    pricingFeatureAnalytics: "Аналитичка Табла",
+    pricingFeatureSupport: "Приоритетна Поддршка",
+    ultimateEventCompanion: "Совршениот Сопатник за Настани",
+
+    // BETA FEEDBACK SECTION MK
+    betaFeedbackTitle: "Помогнете ни да го подобриме",
+    betaFeedbackSubtitle: "Споделете ги вашите мислења за да го подобриме SnapifY",
+    betaFeedbackPlaceholder: "Што ви се допаѓа или што може да се подобри?",
+    betaFeedbackSubmit: "Испрати Повратна Информација",
+    betaFeedbackThanks: "Ви благодариме за вашата повратна информација!",
+    betaFeedbackError: "Ве молиме внесете повратна информација",
+    betaFeedbackCharLimit: "Ограничење од 500 знаци",
   },
   tr: {
     // ... existing ...
@@ -904,6 +964,36 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     proDesc: "Anında teslimat ve markalama ile fotoğrafçılık işinizi büyütün.",
     statPhotos: "Paylaşılan Fotoğraf",
     statEvents: "Düzenlenen Etkinlik",
+
+    // NEW LANDING PAGE KEYS TR
+    continue_with: "Google ile devam et",
+    features: "Özellikler",
+    selectPlan: "Plan Seç",
+    recommended: "Önerilen",
+    pricingFeature1Event: "1 Etkinlik/Ay",
+    pricingFeatureQR: "QR Kod Galerisi",
+    pricingFeatureWatermarked: "Filigranlı",
+    pricingFeature7Day: "7 Gün Saklama",
+    pricingFeatureUnlimited: "Sınırsız Etkinlik",
+    pricingFeatureFaceID: "FaceID Eşleştirme",
+    pricingFeatureNoWatermark: "Filigransız",
+    pricingFeature1Year: "1 Yıl Saklama",
+    pricingFeatureInstant: "Anında Teslimat",
+    pricingFeatureTeam: "Ekip Erişimi",
+    pricingFeatureBranding: "Özel Markalama",
+    pricingFeatureEmail: "E-posta Pazarlaması",
+    pricingFeatureAnalytics: "Analitik Paneli",
+    pricingFeatureSupport: "Öncelikli Destek",
+    ultimateEventCompanion: "Etkinliklerin En İyi Arkadaşı",
+
+    // BETA FEEDBACK SECTION TR
+    betaFeedbackTitle: "Bize Yardım Edin",
+    betaFeedbackSubtitle: "SnapifY'yi geliştirmek için düşüncelerinizi paylaşın",
+    betaFeedbackPlaceholder: "Beğendiğiniz veya geliştirilebilecek şeyler neler?",
+    betaFeedbackSubmit: "Geri Bildirim Gönder",
+    betaFeedbackThanks: "Geri bildiriminiz için teşekkür ederiz!",
+    betaFeedbackError: "Lütfen geri bildiriminizi girin",
+    betaFeedbackCharLimit: "500 karakter sınırı",
   },
   sq: {
     // ... existing ...
@@ -1183,13 +1273,43 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     proDesc: "Përmirësoni biznesin tuaj të fotografisë me shpërndarje të menjëhershme.",
     statPhotos: "Foto të Ndara",
     statEvents: "Ngjarje të Organizuara",
+
+    // NEW LANDING PAGE KEYS SQ
+    continue_with: "Vazhdo me Google",
+    features: "Karakteristikat",
+    selectPlan: "Zgjidh Planin",
+    recommended: "E Rekomanduar",
+    pricingFeature1Event: "1 Ngjarje/Muaj",
+    pricingFeatureQR: "Galeri QR Kodi",
+    pricingFeatureWatermarked: "Me Watermark",
+    pricingFeature7Day: "7 Ditë Ruajtje",
+    pricingFeatureUnlimited: "Ngjarje Pa Limit",
+    pricingFeatureFaceID: "Përputhje FaceID",
+    pricingFeatureNoWatermark: "Pa Watermark",
+    pricingFeature1Year: "1 Vit Ruajtje",
+    pricingFeatureInstant: "Dërgim i Menjëhershëm",
+    pricingFeatureTeam: "Qasje Ekipi",
+    pricingFeatureBranding: "Markim Personalizuar",
+    pricingFeatureEmail: "Marketing Email",
+    pricingFeatureAnalytics: "Paneli i Analitikave",
+    pricingFeatureSupport: "Mbështetje Prioritare",
+    ultimateEventCompanion: "Shoqëruesi i Përkryer për Ngjarje",
+
+    // BETA FEEDBACK SECTION SQ
+    betaFeedbackTitle: "Na Ndihmoni të Përmirësohem",
+    betaFeedbackSubtitle: "Ndani mendimet tuaja për të përmirësuar SnapifY",
+    betaFeedbackPlaceholder: "Çfarë ju pëlqen ose çfarë mund të përmirësohet?",
+    betaFeedbackSubmit: "Dërgo Komentin",
+    betaFeedbackThanks: "Faleminderit për komentin tuaj!",
+    betaFeedbackError: "Ju lutemi shkruani komentin tuaj",
+    betaFeedbackCharLimit: "Kufi 500 karakteresh",
   }
 };
 
 export const getPricingTiers = (t: TranslateFn): PricingTier[] => [
   {
     id: TierLevel.FREE,
-    name: 'Party Starter',
+    name: 'FREE',
     price: 'Free',
     features: ['7 Hours Access Limit', '100MB Storage', 'Standard Support', 'Ad-supported'],
     cta: t('startFree'),
@@ -1197,7 +1317,7 @@ export const getPricingTiers = (t: TranslateFn): PricingTier[] => [
   },
   {
     id: TierLevel.BASIC,
-    name: 'Celebration Plus',
+    name: 'BASIC',
     price: '$9.99',
     features: ['10GB Storage', '30 Days Active', 'HD Photo Uploads', 'AI Auto-Captioning'],
     cta: t('contactSales'),
@@ -1205,7 +1325,7 @@ export const getPricingTiers = (t: TranslateFn): PricingTier[] => [
   },
   {
     id: TierLevel.PRO,
-    name: 'Gala Elite',
+    name: 'PRO',
     price: '$29.99',
     features: ['30GB Storage', '30 Days Active', '4K Video Support', 'Priority Support', 'Custom Branding'],
     cta: t('contactSales'),
@@ -1213,7 +1333,7 @@ export const getPricingTiers = (t: TranslateFn): PricingTier[] => [
   },
   {
     id: TierLevel.STUDIO,
-    name: 'Studio Enterprise',
+    name: 'STUDIO',
     price: '$99',
     features: ['Unlimited Events', 'Auto Watermarking', 'Studio Branding', 'Client Analytics', 'Instant ZIP Download'],
     cta: t('applyForPhotographer'),
@@ -1235,8 +1355,9 @@ export const EVENT_THEMES = [
 ];
 
 export const HERO_IMAGES = [
-  "https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&q=80&w=1920",
-  "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&q=80&w=1920",
-  "https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?auto=format&fit=crop&q=80&w=1920",
-  "https://images.unsplash.com/photo-1513151233558-d860c5398176?auto=format&fit=crop&q=80&w=1920"
+  "https://images.unsplash.com/photo-1530103862676-de3c9a59af57?auto=format&fit=crop&q=80&w=2940", // Friends/Party (Updated)
+  "https://images.unsplash.com/photo-1523580494863-6f3031224c94?auto=format&fit=crop&q=80&w=2940", // Graduation/Event
+  "https://images.unsplash.com/photo-1511578314322-379afb476865?auto=format&fit=crop&q=80&w=2940", // Conference/Professional
+  "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&q=80&w=2940", // Nightclub/Event
+  "https://images.unsplash.com/photo-1515934751635-c81c6bc9a2d8?auto=format&fit=crop&q=80&w=2940"  // Wedding Ceremony
 ];

@@ -78,7 +78,7 @@ async function testZipDownload() {
 
     try {
         // This will fail because the URLs are mock, but we can test the progress logic
-        await zipManager.generateZip(mockFiles, 'Test_Event', false);
+        await zipManager.generateZip(mockFiles, 'Test_Event');
     } catch (error) {
         console.log('Expected error with mock URLs:', error);
         // This is expected since we're using mock URLs

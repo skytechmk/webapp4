@@ -24,7 +24,7 @@ describe('BetaTestingManager', () => {
   });
 
   describe('getCurrentVersion', () => {
-    it('should return v2.1 for web platform', () => {
+    it('should return beta 2.2 for web platform', () => {
       // Mock navigator for web platform
       Object.defineProperty(window.navigator, 'userAgent', {
         value: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
@@ -32,10 +32,10 @@ describe('BetaTestingManager', () => {
       });
 
       const version = BetaTestingManager.getCurrentVersion();
-      expect(version).toBe('v2.1');
+      expect(version).toBe('beta 2.2');
     });
 
-    it('should return v2.1-native for native platforms', () => {
+    it('should return beta 2.2-native for native platforms', () => {
       // Mock navigator for Electron
       Object.defineProperty(window.navigator, 'userAgent', {
         value: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Electron/1.0.0',
@@ -43,7 +43,7 @@ describe('BetaTestingManager', () => {
       });
 
       const version = BetaTestingManager.getCurrentVersion();
-      expect(version).toBe('v2.1-native');
+      expect(version).toBe('beta 2.2-native');
     });
   });
 

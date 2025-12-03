@@ -1171,8 +1171,7 @@ export default function App() {
       // Generate zip with progress tracking
       const { zipBlob, cleanup } = await zipManagerInstance.generateZip(
         files,
-        targetEvent.title,
-        isFreeTier
+        targetEvent.title
       );
 
       // Download the zip file
