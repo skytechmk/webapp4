@@ -62,7 +62,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // PWA Update Hook
   const {
     updateServiceWorker,
-  } = useRegisterSW();
+  } = useRegisterSW({});
 
   // Selection State
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
@@ -1702,8 +1702,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       </div>
                       <div className="flex items-center gap-2">
                         <span className={`text-xs font-bold px-2 py-1 rounded-full border ${feedbackItem.status === 'new' ? 'bg-blue-100 text-blue-700 border-blue-200' :
-                            feedbackItem.status === 'reviewed' ? 'bg-yellow-100 text-yellow-700 border-yellow-200' :
-                              'bg-green-100 text-green-700 border-green-200'
+                          feedbackItem.status === 'reviewed' ? 'bg-yellow-100 text-yellow-700 border-yellow-200' :
+                            'bg-green-100 text-green-700 border-green-200'
                           }`}>
                           {feedbackItem.status.toUpperCase()}
                         </span>
@@ -1721,9 +1721,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           </div>
                         )}
                         <span className={`text-xs font-bold px-2 py-1 rounded-full ${feedbackItem.category === 'bug' ? 'bg-red-100 text-red-700' :
-                            feedbackItem.category === 'feature-request' ? 'bg-purple-100 text-purple-700' :
-                              feedbackItem.category === 'improvement' ? 'bg-blue-100 text-blue-700' :
-                                'bg-slate-100 text-slate-700'
+                          feedbackItem.category === 'feature-request' ? 'bg-purple-100 text-purple-700' :
+                            feedbackItem.category === 'improvement' ? 'bg-blue-100 text-blue-700' :
+                              'bg-slate-100 text-slate-700'
                           }`}>
                           {feedbackItem.category.toUpperCase()}
                         </span>

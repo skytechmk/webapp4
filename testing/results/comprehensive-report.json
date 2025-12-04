@@ -1,0 +1,73 @@
+{
+  "summary": {
+    "totalTests": 4,
+    "passedTests": 2,
+    "failedTests": 0,
+    "pendingTests": 2,
+    "passRate": 50,
+    "failRate": 0,
+    "timestamp": "2025-12-04T14:56:49.046Z"
+  },
+  "testTypeStats": {
+    "integration": {
+      "total": 1,
+      "passed": 0,
+      "failed": 0,
+      "pending": 1
+    },
+    "e2e": {
+      "total": 1,
+      "passed": 0,
+      "failed": 0,
+      "pending": 1
+    },
+    "performance": {
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "pending": 0
+    }
+  },
+  "coverageMetrics": null,
+  "detailedResults": [
+    {
+      "testType": "integration",
+      "testName": "API Endpoint Tests",
+      "status": "pending",
+      "duration": 0,
+      "timestamp": "2025-12-04T14:56:49.030Z"
+    },
+    {
+      "testType": "e2e",
+      "testName": "User Journey Tests",
+      "status": "pending",
+      "duration": 0,
+      "timestamp": "2025-12-04T14:56:49.030Z"
+    },
+    {
+      "testType": "performance",
+      "testName": "API Response Time",
+      "status": "passed",
+      "duration": 150,
+      "metrics": {
+        "averageResponseTime": 150,
+        "maxResponseTime": 250,
+        "minResponseTime": 80
+      },
+      "timestamp": "2025-12-04T14:56:49.030Z"
+    },
+    {
+      "testType": "performance",
+      "testName": "Database Query Performance",
+      "status": "passed",
+      "duration": 200,
+      "metrics": {
+        "averageQueryTime": 45,
+        "maxQueryTime": 120,
+        "minQueryTime": 15
+      },
+      "timestamp": "2025-12-04T14:56:49.030Z"
+    }
+  ],
+  "performanceMetrics": []
+}

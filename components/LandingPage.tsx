@@ -135,10 +135,12 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                         {
                             theme: "filled_white",
                             size: "large",
-                            width: "100%",
+                            width: 400, // Fixed width to comply with Google requirements
                             text: "continue_with",
                             shape: "pill",
-                            logo_alignment: "left"
+                            logo_alignment: "left",
+                            // Fix for Google Sign-In width validation
+                            use_fedcm_for_prompt: false
                         }
                     );
                 } catch (e) {

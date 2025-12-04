@@ -77,13 +77,17 @@ export const HeroSection: React.FC<HeroSectionProps> = memo(({
                             width: window.innerWidth < 640 ? 320 : 400,
                             text: "continue_with",
                             shape: "pill",
+                            // Fix for Google Sign-In width validation
+                            use_fedcm_for_prompt: false,
+                            // Ensure proper button sizing
+                            logo_alignment: "left"
                         }
                     );
                 } catch (e) {
                     console.error("GSI Render Error", e);
-                    // Fallback button on error
+                    // Fallback button on error - fix width to comply with Google requirements
                     if (googleButtonRef.current) {
-                        googleButtonRef.current.innerHTML = `<button onclick="if(window.google) window.google.accounts.id.prompt();" class="w-full bg-white text-black font-bold py-3 rounded-full flex items-center justify-center gap-2"><span>Continue with Google</span></button>`;
+                        googleButtonRef.current.innerHTML = `<button onclick="if(window.google) window.google.accounts.id.prompt();" class="w-full bg-white text-black font-bold py-3 rounded-full flex items-center justify-center gap-2" style="width: 100%; max-width: 400px; min-width: 240px;"><span>Continue with Google</span></button>`;
                     }
                 }
             }

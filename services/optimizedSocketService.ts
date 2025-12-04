@@ -25,8 +25,8 @@ function debounce<T extends (...args: any[]) => any>(func: T, wait: number): T {
     } as T;
 }
 
-// Simple fallback for API URL - works in both browser and Node.js environments
-const API_URL = 'http://localhost:3001';
+// Get API URL from environment variables with fallback
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
 // Configuration constants
 const DEBOUNCE_DELAY = 300; // ms for event handler debouncing

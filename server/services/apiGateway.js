@@ -19,6 +19,15 @@ class ApiGateway {
             res.setHeader('X-Content-Type-Options', 'nosniff');
             res.setHeader('X-Frame-Options', 'DENY');
             res.setHeader('X-XSS-Protection', '1; mode=block');
+
+            // CORS and COOP headers to prevent postMessage blocking
+            res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
+            res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
+            res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
+
+            // Additional security headers
+            res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://unpkg.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' https:; connect-src 'self' ws://localhost:3001 https://snapify.mk; frame-src 'self' https://accounts.google.com;");
+
             next();
         });
 
