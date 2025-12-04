@@ -1,0 +1,29 @@
+/* Media Grid Smooth Scrolling and Performance Optimizations */
+.media-grid-container {
+    scroll-behavior: smooth;
+    will-change: transform;
+    contain: strict;
+}
+
+.media-grid-item {
+    transition: transform 0.2s ease-out, opacity 0.2s ease-out;
+    will-change: transform, opacity;
+    backface-visibility: hidden;
+}
+
+.media-grid-item:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.virtuoso-grid {
+    scrollbar-width: thin;
+    scrollbar-color: #cbd5e0 #f1f5f9;
+}
+
+/* Performance optimizations for grid items */
+@media (prefers-reduced-motion: reduce) {
+    .media-grid-item {
+        transition: none;
+    }
+}

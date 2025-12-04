@@ -49,7 +49,7 @@ export const sanitizeHtmlContent = (input: string): string => {
 export class RateLimiter {
   private attempts: Map<string, { count: number; resetTime: number }> = new Map();
 
-  constructor(private maxAttempts: number = 5, private windowMs: number = 15 * 60 * 1000) {}
+  constructor(private maxAttempts: number = 5, private windowMs: number = 15 * 60 * 1000) { }
 
   isAllowed(key: string): boolean {
     const now = Date.now();

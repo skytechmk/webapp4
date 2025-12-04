@@ -8,8 +8,8 @@ export const ReloadPrompt: React.FC = () => {
   const [manualChecking, setManualChecking] = useState(false);
 
   const {
-    offlineReady: [offlineReady, setOfflineReady],
-    needRefresh: [needRefresh, setNeedRefresh],
+    offlineReady,
+    needRefresh,
     updateServiceWorker,
   } = useRegisterSW({
     onRegistered(r: any) {
@@ -29,6 +29,10 @@ export const ReloadPrompt: React.FC = () => {
       console.warn('Service Worker registration error:', error);
     },
   });
+
+  // Convert to state for local management
+  const [localOfflineReady, setOfflineReady] = useState(offlineReady);
+  const [localNeedRefresh, setNeedRefresh] = useState(needRefresh);
 
   const close = () => {
     setOfflineReady(false);
@@ -71,14 +75,14 @@ export const ReloadPrompt: React.FC = () => {
   }, [isDev]);
 
   // Show component in dev mode or when there are updates/offline ready
-  if (!isDev && !offlineReady && !needRefresh) return null;
+  if (!isDev && !localOfflineReady && !localNeedRefresh) return null;
 
   return (
     <div className="fixed bottom-6 right-6 z-[100] bg-slate-900 text-white p-4 rounded-xl shadow-2xl border border-slate-700 flex flex-col gap-3 max-w-sm animate-in slide-in-from-bottom-4">
       <div className="flex justify-between items-start">
         <div>
           <h3 className="font-bold text-sm">
-            {offlineReady ? 'App ready to work offline' : needRefresh ? 'New content available, click on reload button to update.' : 'Development Mode'}
+            {localOfflineReady ? 'App ready to work offline' : localNeedRefresh ? 'New content available, click on reload button to update.' : 'Development Mode'}
           </h3>
           {!needRefresh && !offlineReady && (
             <p className="text-xs text-slate-400 mt-1">Auto-checks for updates every 5 seconds{isDev ? ' • Ctrl+Shift+R or use forceAppUpdate() in console' : ''}</p>
@@ -92,12 +96,12 @@ export const ReloadPrompt: React.FC = () => {
       </div>
 
       <div className="flex gap-2">
-        {needRefresh && (
+        {localNeedRefresh && (
           <button
             onClick={() => updateServiceWorker(true)}
             className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 transition-colors flex-1"
           >
-             <RotateCcw size={16} /> Reload & Update
+            <RotateCcw size={16} /> Reload & Update
           </button>
         )}
 

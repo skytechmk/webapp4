@@ -1,7 +1,7 @@
 import * as React from 'react';
 const { useState, useEffect, useRef } = React;
 import { Globe, Menu, X, Zap, Star, Shield, Smartphone, Camera, QrCode, Image as ImageIcon, Check, Mail, Star as StarIcon, MessageCircle } from 'lucide-react';
-import { Language, TranslateFn, TierLevel } from '../types';
+import { Language, TranslateFn, TierLevel, User } from '../types';
 import { TermsModal } from './TermsModal';
 import { getPricingTiers as getPricingTiersFromConstants } from '../constants';
 import { BetaTestingManager } from '../lib/beta-testing';
@@ -70,7 +70,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({
     authError,
     language,
     onChangeLanguage,
-    t
+    t,
+    currentUser
 }) => {
     const [currentHeroImageIndex, setCurrentHeroImageIndex] = useState(0);
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);

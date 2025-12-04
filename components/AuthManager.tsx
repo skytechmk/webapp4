@@ -272,16 +272,33 @@ export const AuthManager: React.FC<AuthManagerProps> = ({
             }
         };
 
+        let googleInitInterval: NodeJS.Timeout | null = null;
+
         if (window.google) initGoogle();
         else {
-            const interval = setInterval(() => {
+            googleInitInterval = setInterval(() => {
                 if (window.google) {
                     initGoogle();
-                    clearInterval(interval);
+                    if (googleInitInterval) {
+                        clearInterval(googleInitInterval);
+                        googleInitInterval = null;
+                    }
                 }
             }, 500);
-            setTimeout(() => clearInterval(interval), 15000);
+            setTimeout(() => {
+                if (googleInitInterval) {
+                    clearInterval(googleInitInterval);
+                    googleInitInterval = null;
+                }
+            }, 15000);
         }
+
+        return () => {
+            // Clean up Google Sign-In initialization interval
+            if (googleInitInterval) {
+                clearInterval(googleInitInterval);
+            }
+        };
     }, []);
 
     // Socket.IO authentication and event handling
@@ -312,9 +329,22 @@ export const AuthManager: React.FC<AuthManagerProps> = ({
             socketService.on('user_updated', handleUserUpdate);
 
             return () => {
+                // Clean up socket event listeners
                 socketService.off('user_updated', handleUserUpdate);
+
+                // Disconnect socket if no longer needed
+                if (!currentUser) {
+                    socketService.disconnect();
+                }
             };
         }
+
+        // Clean up socket connection if user logs out
+        return () => {
+            if (!currentUser) {
+                socketService.disconnect();
+            }
+        };
     }, [currentUser?.id]);
 
     // Load initial data

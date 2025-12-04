@@ -1,5 +1,5 @@
 import * as React from "react";
-const { useState, useRef, useCallback } = React;
+const { useState, useRef, useCallback, useEffect } = React;
 import { MediaItem, Event, User, TierLevel, TranslateFn } from '../types';
 import { api } from '../services/api';
 import { applyWatermark as applyWatermarkUtil } from '../utils/imageProcessing';
@@ -65,7 +65,17 @@ export const MediaManager: React.FC<MediaManagerProps> = ({
         const type = file.type.startsWith('video') ? 'video' : 'image';
         const url = URL.createObjectURL(file);
         setPreviewMedia({ type, src: url, file });
-        setTimeout(() => { e.target.value = ''; }, 100);
+
+        // Clean up file input after processing
+        const cleanupFileInput = () => {
+            e.target.value = '';
+            // Revoke object URL when no longer needed
+            setTimeout(() => {
+                URL.revokeObjectURL(url);
+            }, 10000); // Revoke after 10 seconds to ensure it's no longer needed
+        };
+
+        setTimeout(cleanupFileInput, 100);
     };
 
     // Initiate media action
@@ -140,26 +150,37 @@ export const MediaManager: React.FC<MediaManagerProps> = ({
             // Apply rotation
             if (type === 'image' && uploadFile && rotation !== 0) {
                 const img = new Image();
-                img.src = URL.createObjectURL(uploadFile);
-                await new Promise(resolve => { img.onload = resolve; });
+                const objectUrl = URL.createObjectURL(uploadFile);
+                img.src = objectUrl;
 
-                const canvas = document.createElement('canvas');
-                const ctx = canvas.getContext('2d');
-                if (ctx) {
-                    const needsSwap = Math.abs(rotation) === 90 || Math.abs(rotation) === 270;
-                    canvas.width = needsSwap ? img.height : img.width;
-                    canvas.height = needsSwap ? img.width : img.height;
+                try {
+                    await new Promise(resolve => { img.onload = resolve; });
 
-                    ctx.save();
-                    ctx.translate(canvas.width / 2, canvas.height / 2);
-                    ctx.rotate((rotation * Math.PI) / 180);
-                    ctx.drawImage(img, -img.width / 2, -img.height / 2);
-                    ctx.restore();
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+                    if (ctx) {
+                        const needsSwap = Math.abs(rotation) === 90 || Math.abs(rotation) === 270;
+                        canvas.width = needsSwap ? img.height : img.width;
+                        canvas.height = needsSwap ? img.width : img.height;
 
-                    const rotatedBlob = await new Promise<Blob | null>(resolve => {
-                        canvas.toBlob(blob => resolve(blob), 'image/jpeg', 0.85);
-                    });
-                    if (rotatedBlob) uploadFile = new File([rotatedBlob], "final.jpg", { type: "image/jpeg" });
+                        ctx.save();
+                        ctx.translate(canvas.width / 2, canvas.height / 2);
+                        ctx.rotate((rotation * Math.PI) / 180);
+                        ctx.drawImage(img, -img.width / 2, -img.height / 2);
+                        ctx.restore();
+
+                        const rotatedBlob = await new Promise<Blob | null>(resolve => {
+                            canvas.toBlob(blob => resolve(blob), 'image/jpeg', 0.85);
+                        });
+                        if (rotatedBlob) uploadFile = new File([rotatedBlob], "final.jpg", { type: "image/jpeg" });
+                    }
+                } finally {
+                    // Clean up resources
+                    URL.revokeObjectURL(objectUrl);
+                    if (img) {
+                        img.onload = null;
+                        img.onerror = null;
+                    }
                 }
             }
 
@@ -232,6 +253,16 @@ export const MediaManager: React.FC<MediaManagerProps> = ({
         setEvents(prev => prev.map(e => e.id === activeEvent.id ? updated : e));
         alert(t('coverSet'));
     };
+
+    // Cleanup effect for memory management
+    useEffect(() => {
+        return () => {
+            // Clean up any pending object URLs when component unmounts
+            if (previewMedia?.src && previewMedia.src.startsWith('blob:')) {
+                URL.revokeObjectURL(previewMedia.src);
+            }
+        };
+    }, [previewMedia]);
 
     return (
         <>

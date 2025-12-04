@@ -9,7 +9,7 @@ import { socketService } from '../services/socketService';
 import { isMobileDevice } from '../utils/deviceDetection';
 import { downloadMediaForMobile, generateFilename } from '../utils/mobileDownload';
 import { canUploadVideos, getVideoUploadUIState } from '../utils/videoPermissions';
-import { ShareModal } from './ShareModal';
+import { ShareModal } from './event/modals/ShareModal';
 import { VendorAdCard } from './VendorAdCard';
 
 // Helper function to get CSS transform for EXIF orientation
@@ -282,33 +282,33 @@ const EventGalleryComponent: React.FC<EventGalleryProps> = ({
         // Real-time media updates
         socketService.on('media_uploaded', (newItem: MediaItem) => {
             console.log('EventGallery: Received media_uploaded event', newItem);
-  
+
             // Helper to process URLs (same as in App.tsx)
             const processUrl = (key: string) => {
                 if (!key) return '';
                 if (key.startsWith('/api/proxy-media') || key.startsWith('http')) return key;
                 return `/api/proxy-media?key=${encodeURIComponent(key)}`;
             };
-  
+
             const processedItem = {
                 ...newItem,
                 url: processUrl(newItem.url),
                 previewUrl: newItem.previewUrl ? processUrl(newItem.previewUrl) : processUrl(newItem.url)
             };
-  
+
             setLocalMedia(prev => {
                 // Prevent duplicates
                 if (prev.some(m => m.id === processedItem.id)) return prev;
                 // Add new media to the beginning of the array
                 return [processedItem, ...prev];
             });
-  
+
             // FIX: Force re-render of grid items to ensure new media appears immediately
             // This is especially important for virtualized lists
             setTimeout(() => {
                 setLocalMedia(prev => [...prev]);
             }, 100);
-  
+
             // FIX: Also force a re-render of the grid items by updating the gridItems state
             setTimeout(() => {
                 // This will trigger the useMemo to recompute gridItems
