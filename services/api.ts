@@ -373,6 +373,63 @@ Example structure:
         });
         if (!res.ok) throw new Error("Failed to clear users database");
         return res.json();
+    },
+
+    // --- FEEDBACK SYSTEM ---
+    submitFeedback: async (feedbackData: {
+        userId: string;
+        rating?: number;
+        comments: string;
+        category: 'bug' | 'feature-request' | 'improvement' | 'general';
+        feature?: string;
+        source: 'landing-page' | 'beta-modal';
+        version: string;
+    }): Promise<{ success: boolean; feedbackId: string }> => {
+        const res = await fetch(`${API_URL}/api/feedback`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+            body: JSON.stringify(feedbackData)
+        });
+        if (!res.ok) throw new Error("Failed to submit feedback");
+        return res.json();
+    },
+
+    getAllFeedback: async (): Promise<{
+        feedbackItems: Array<{
+            id: string;
+            userId: string;
+            userName: string;
+            userEmail: string;
+            rating?: number;
+            comments: string;
+            category: 'bug' | 'feature-request' | 'improvement' | 'general';
+            feature?: string;
+            source: 'landing-page' | 'beta-modal';
+            version: string;
+            submittedAt: string;
+            status: 'new' | 'reviewed' | 'resolved';
+        }>;
+        stats: {
+            totalFeedback: number;
+            newFeedback: number;
+            reviewedFeedback: number;
+            resolvedFeedback: number;
+            byCategory: Record<string, number>;
+            bySource: Record<string, number>;
+        };
+    }> => {
+        const res = await fetch(`${API_URL}/api/feedback`, { headers: { ...getAuthHeaders() } });
+        if (!res.ok) throw new Error("Failed to fetch feedback");
+        return res.json();
+    },
+
+    updateFeedbackStatus: async (feedbackId: string, status: 'new' | 'reviewed' | 'resolved'): Promise<void> => {
+        const res = await fetch(`${API_URL}/api/feedback/${feedbackId}/status`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+            body: JSON.stringify({ status })
+        });
+        if (!res.ok) throw new Error("Failed to update feedback status");
     }
 };
 

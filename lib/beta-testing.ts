@@ -261,22 +261,41 @@ export class BetaTestingManager {
   /**
    * Submit beta feedback
    */
-  static submitBetaFeedback(userId: string, feedback: {
+  static async submitBetaFeedback(userId: string, feedback: {
     rating: number;
     comments: string;
     feature: string;
     category: 'bug' | 'feature-request' | 'improvement' | 'general';
-  }): void {
-    const userAccess = this.getUserBetaAccess(userId);
-    if (userAccess) {
-      userAccess.feedbackSubmitted = true;
-      const allAccess = this.getAllBetaUserAccess();
-      allAccess[userId] = userAccess;
-      localStorage.setItem(this.USER_ACCESS_KEY, JSON.stringify(allAccess));
-    }
+  }): Promise<{ success: boolean; feedbackId: string }> {
+    try {
+      // Import the API service dynamically to avoid circular dependencies
+      const apiModule = await import('../services/api');
+      const api = apiModule.api;
 
-    // In a real implementation, this would send to a backend service
-    console.log('Beta feedback submitted:', { userId, feedback });
+      const result = await api.submitFeedback({
+        userId,
+        rating: feedback.rating,
+        comments: feedback.comments,
+        category: feedback.category,
+        feature: feedback.feature,
+        source: 'beta-modal',
+        version: this.getCurrentVersion()
+      });
+
+      // Also update local storage for immediate UI feedback
+      const userAccess = this.getUserBetaAccess(userId);
+      if (userAccess) {
+        userAccess.feedbackSubmitted = true;
+        const allAccess = this.getAllBetaUserAccess();
+        allAccess[userId] = userAccess;
+        localStorage.setItem(this.USER_ACCESS_KEY, JSON.stringify(allAccess));
+      }
+
+      return result;
+    } catch (error) {
+      console.error('Failed to submit beta feedback:', error);
+      throw error;
+    }
   }
 
   /**

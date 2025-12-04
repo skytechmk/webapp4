@@ -30,7 +30,7 @@ export const BetaFeedbackModal: React.FC<BetaFeedbackModalProps> = ({
     setIsSubmitting(true);
 
     try {
-      BetaTestingManager.submitBetaFeedback(currentUser.id, {
+      const result = await BetaTestingManager.submitBetaFeedback(currentUser.id, {
         rating,
         comments,
         feature,
@@ -87,9 +87,8 @@ export const BetaFeedbackModal: React.FC<BetaFeedbackModalProps> = ({
                     key={star}
                     type="button"
                     onClick={() => setRating(star)}
-                    className={`text-2xl ${
-                      star <= rating ? 'text-yellow-400' : 'text-gray-300'
-                    } hover:text-yellow-400 transition-colors`}
+                    className={`text-2xl ${star <= rating ? 'text-yellow-400' : 'text-gray-300'
+                      } hover:text-yellow-400 transition-colors`}
                   >
                     ★
                   </button>

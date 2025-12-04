@@ -15,6 +15,7 @@ interface LandingPageProps {
     language: Language;
     onChangeLanguage: (lang: Language) => void;
     t: TranslateFn;
+    currentUser?: User | null;
 }
 
 // --- Mock Data & Constants ---
@@ -175,11 +176,27 @@ export const LandingPage: React.FC<LandingPageProps> = ({
 
         setIsSubmittingFeedback(true);
         try {
-            // Simulate API call to submit feedback
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            setFeedbackSubmitted(true);
-            setFeedback('');
+            // Import API dynamically to avoid circular dependencies
+            const apiModule = await import('../services/api');
+            const api = apiModule.api;
+
+            // Submit feedback via API
+            const result = await api.submitFeedback({
+                userId: currentUser?.id || 'anonymous',
+                comments: feedback,
+                category: 'general',
+                source: 'landing-page',
+                version: '2.2'
+            });
+
+            if (result.success) {
+                setFeedbackSubmitted(true);
+                setFeedback('');
+            } else {
+                throw new Error('Feedback submission failed');
+            }
         } catch (error) {
+            console.error('Failed to submit feedback:', error);
             setFeedbackError('Failed to submit feedback. Please try again.');
         } finally {
             setIsSubmittingFeedback(false);

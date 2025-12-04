@@ -69,13 +69,14 @@ interface NavigationProps {
 
 interface LandingPageProps {
   onGoogleLogin: () => void;
-  onEmailAuth: (data: any, isSignUp: boolean) => Promise<void>;
+  onEmailAuth: (data: any, isSignUp: boolean) => void;
   onContactSales: (tier?: TierLevel) => void;
   isLoggingIn: boolean;
   authError: string;
   language: Language;
   onChangeLanguage: (lang: Language) => void;
   t: TranslateFn;
+  currentUser?: User | null;
 }
 
 interface PWAInstallPromptProps {
@@ -1361,6 +1362,7 @@ export default function App() {
                   language={language}
                   onChangeLanguage={changeLanguage}
                   t={t}
+                  currentUser={currentUser}
                 />
               </Suspense>
               <Suspense fallback={null}>
