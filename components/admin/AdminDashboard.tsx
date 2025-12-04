@@ -62,7 +62,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     useEffect(() => {
         useUserStore.getState().setAllUsers(users);
         useEventStore.getState().setEvents(events);
-    }, [users, events]);
+    }, []);
 
     const backToUsers = () => {
         setSelectedUserForEvents(null);

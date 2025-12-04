@@ -5,6 +5,7 @@
 
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
+import '@testing-library/jest-dom';
 import { MediaGrid } from '../MediaGrid';
 import { VirtuosoGrid } from 'react-virtuoso';
 import { MediaItem, UserRole, TierLevel } from '../../../../types';

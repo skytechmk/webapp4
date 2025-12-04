@@ -6,17 +6,31 @@ import { redisService } from '../../server/services/redisService.js';
 class ServiceDiscovery {
     constructor() {
         this.services = {
-            auth: {
-                name: 'auth',
-                type: 'authentication',
-                endpoints: ['/health', '/register', '/login', '/validate', '/refresh'],
+            user: {
+                name: 'user',
+                type: 'user-management',
+                endpoints: ['/health', '/users', '/users/:id', '/auth/login', '/auth/google', '/auth/validate', '/auth/refresh'],
+                instances: [],
+                health: { status: 'unknown', lastCheck: null }
+            },
+            event: {
+                name: 'event',
+                type: 'event-management',
+                endpoints: ['/health', '/events', '/events/:id', '/events/:id/validate-pin'],
                 instances: [],
                 health: { status: 'unknown', lastCheck: null }
             },
             media: {
                 name: 'media',
                 type: 'media-processing',
-                endpoints: ['/health', '/upload', '/:mediaId', '/event/:eventId'],
+                endpoints: ['/health', '/upload', '/:mediaId', '/event/:eventId', '/bulk-delete', '/:mediaId/like'],
+                instances: [],
+                health: { status: 'unknown', lastCheck: null }
+            },
+            notification: {
+                name: 'notification',
+                type: 'notification',
+                endpoints: ['/health', '/notifications', '/notifications/user/:userId', '/notifications/:id/read', '/notifications/email', '/notifications/push'],
                 instances: [],
                 health: { status: 'unknown', lastCheck: null }
             }
@@ -62,13 +76,21 @@ class ServiceDiscovery {
             // In a real implementation, this would query a service registry
             // For now, we'll use environment variables and defaults
 
-            // Discover auth service
-            const authServiceUrl = process.env.AUTH_SERVICE_URL || 'http://localhost:3002';
-            this.registerServiceInstance('auth', authServiceUrl);
+            // Discover user service
+            const userServiceUrl = process.env.USER_SERVICE_URL || 'http://localhost:3004';
+            this.registerServiceInstance('user', userServiceUrl);
+
+            // Discover event service
+            const eventServiceUrl = process.env.EVENT_SERVICE_URL || 'http://localhost:3005';
+            this.registerServiceInstance('event', eventServiceUrl);
 
             // Discover media service
             const mediaServiceUrl = process.env.MEDIA_SERVICE_URL || 'http://localhost:3003';
             this.registerServiceInstance('media', mediaServiceUrl);
+
+            // Discover notification service
+            const notificationServiceUrl = process.env.NOTIFICATION_SERVICE_URL || 'http://localhost:3006';
+            this.registerServiceInstance('notification', notificationServiceUrl);
 
             // Log discovery results
             logger.info('Service discovery completed', {

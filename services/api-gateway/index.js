@@ -4,6 +4,7 @@ import https from 'https';
 import { config } from '../../server/config/env.js';
 import { logger } from '../../server/services/loggerService.js';
 import { serviceCommunication } from '../service-communication/index.js';
+import { serviceDiscovery } from '../service-discovery/index.js';
 import { redisService } from '../../server/services/redisService.js';
 
 class EnhancedApiGateway {
@@ -12,10 +13,14 @@ class EnhancedApiGateway {
         this.server = null;
         this.httpsServer = null;
         this.serviceCommunication = serviceCommunication;
+        this.serviceDiscovery = serviceDiscovery;
         this.routeCache = {};
         this.loadBalancer = {
             auth: { currentIndex: 0, instances: [] },
-            media: { currentIndex: 0, instances: [] }
+            user: { currentIndex: 0, instances: [] },
+            event: { currentIndex: 0, instances: [] },
+            media: { currentIndex: 0, instances: [] },
+            notification: { currentIndex: 0, instances: [] }
         };
 
         this.setupMiddleware();
@@ -123,11 +128,18 @@ class EnhancedApiGateway {
             });
         });
 
-        // Auth service routes
-        this.app.use('/api/auth', this.createServiceProxy('auth'));
+        // User service routes
+        this.app.use('/api/users', this.createServiceProxy('user'));
+        this.app.use('/api/auth', this.createServiceProxy('user'));
+
+        // Event service routes
+        this.app.use('/api/events', this.createServiceProxy('event'));
 
         // Media service routes
         this.app.use('/api/media', this.createServiceProxy('media'));
+
+        // Notification service routes
+        this.app.use('/api/notifications', this.createServiceProxy('notification'));
 
         // Legacy routes (for backward compatibility)
         this.setupLegacyRoutes();
@@ -243,16 +255,29 @@ class EnhancedApiGateway {
 
         // Implement service-specific fallbacks
         switch (serviceName) {
+            case 'user':
             case 'auth':
                 return res.status(503).json({
                     error: 'Authentication service unavailable',
                     fallback: 'Please try again later'
                 });
 
+            case 'event':
+                return res.status(503).json({
+                    error: 'Event service unavailable',
+                    fallback: 'Event operations temporarily unavailable'
+                });
+
             case 'media':
                 return res.status(503).json({
                     error: 'Media service unavailable',
                     fallback: 'Media operations temporarily unavailable'
+                });
+
+            case 'notification':
+                return res.status(503).json({
+                    error: 'Notification service unavailable',
+                    fallback: 'Notification operations temporarily unavailable'
                 });
 
             default:
@@ -278,9 +303,14 @@ class EnhancedApiGateway {
     }
 
     setupServiceDiscovery() {
-        // Discover auth service instances
-        this.loadBalancer.auth.instances = [
-            process.env.AUTH_SERVICE_URL || 'http://localhost:3002'
+        // Discover user service instances
+        this.loadBalancer.user.instances = [
+            process.env.USER_SERVICE_URL || 'http://localhost:3004'
+        ];
+
+        // Discover event service instances
+        this.loadBalancer.event.instances = [
+            process.env.EVENT_SERVICE_URL || 'http://localhost:3005'
         ];
 
         // Discover media service instances
@@ -288,8 +318,14 @@ class EnhancedApiGateway {
             process.env.MEDIA_SERVICE_URL || 'http://localhost:3003'
         ];
 
+        // Discover notification service instances
+        this.loadBalancer.notification.instances = [
+            process.env.NOTIFICATION_SERVICE_URL || 'http://localhost:3006'
+        ];
+
         // Start health monitoring
         this.serviceCommunication.startHealthMonitoring();
+        this.serviceDiscovery.start();
 
         // Log initial service discovery
         logger.info('Service discovery completed', {

@@ -6,7 +6,8 @@ import { fileURLToPath } from 'url';
 import { config } from '../../server/config/env.js';
 import { redisService } from '../../server/services/redisService.js';
 import { logger } from '../../server/services/loggerService.js';
-import { getS3Object, uploadToS3 } from '../../server/services/storage.js';
+import { db } from '../../server/config/db.js';
+import { uploadToS3, deleteFromS3 } from '../../server/services/storage.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -83,11 +84,24 @@ class MediaService {
                     url: `/api/proxy-media?key=${encodeURIComponent(s3Key)}`,
                     uploadedAt: new Date().toISOString(),
                     status: 'uploaded',
-                    ...metadata
+                    uploaderName: metadata.uploaderName || 'Anonymous',
+                    uploaderId: metadata.uploaderId || 'anonymous',
+                    caption: metadata.caption || '',
+                    privacy: metadata.privacy || 'public',
+                    isWatermarked: metadata.isWatermarked || false,
+                    watermarkText: metadata.watermarkText || '',
+                    likes: 0,
+                    isProcessing: false
                 };
+
+                // Save to database
+                await this.saveMedia(mediaItem);
 
                 // Cache the media item
                 await redisService.set(`media:${mediaItem.id}`, mediaItem, 3600);
+
+                // Update event media count
+                await this.incrementEventMediaCount(eventId);
 
                 res.json({
                     success: true,
@@ -114,7 +128,7 @@ class MediaService {
                     });
                 }
 
-                // If not in cache, get from database (mock implementation)
+                // If not in cache, get from database
                 const media = await this.getMediaFromDatabase(mediaId);
                 if (!media) {
                     return res.status(404).json({ error: 'Media not found' });
@@ -149,7 +163,7 @@ class MediaService {
                     });
                 }
 
-                // If not in cache, get from database (mock implementation)
+                // If not in cache, get from database
                 const media = await this.getMediaByEventFromDatabase(eventId);
 
                 // Cache the result
@@ -178,14 +192,21 @@ class MediaService {
                 }
 
                 // Delete from S3
-                // In a real implementation, this would call S3 delete
-                logger.info('Deleting media from S3 (mock)', { s3Key: media.s3Key });
+                try {
+                    if (media.url) await deleteFromS3(media.url);
+                    if (media.previewUrl) await deleteFromS3(media.previewUrl);
+                } catch (e) {
+                    logger.error('Failed to delete media from S3:', { error: e.message });
+                }
 
-                // Delete from database (mock implementation)
+                // Delete from database
                 await this.deleteMediaFromDatabase(mediaId);
 
                 // Invalidate cache
                 await redisService.del(`media:${mediaId}`);
+
+                // Update event media count
+                await this.decrementEventMediaCount(media.eventId);
 
                 res.json({
                     success: true,
@@ -197,55 +218,199 @@ class MediaService {
                 res.status(500).json({ error: 'Internal server error' });
             }
         });
+
+        // Bulk delete media
+        this.app.post('/bulk-delete', async (req, res) => {
+            try {
+                const { mediaIds } = req.body;
+
+                if (!Array.isArray(mediaIds) || mediaIds.length === 0) {
+                    return res.status(400).json({ error: "No media IDs provided" });
+                }
+
+                let deletedCount = 0;
+
+                // Process each media item
+                for (const mediaId of mediaIds) {
+                    try {
+                        // Get media item
+                        const media = await this.getMediaFromDatabase(mediaId);
+                        if (!media) continue;
+
+                        // Delete from S3
+                        try {
+                            if (media.url) await deleteFromS3(media.url);
+                            if (media.previewUrl) await deleteFromS3(media.previewUrl);
+                        } catch (e) {
+                            logger.error('Failed to delete media from S3:', { error: e.message });
+                        }
+
+                        // Delete from database
+                        await this.deleteMediaFromDatabase(mediaId);
+
+                        // Invalidate cache
+                        await redisService.del(`media:${mediaId}`);
+
+                        // Update event media count
+                        await this.decrementEventMediaCount(media.eventId);
+
+                        deletedCount++;
+                    } catch (error) {
+                        logger.error(`Failed to delete media ${mediaId}:`, { error: error.message });
+                    }
+                }
+
+                res.json({
+                    success: true,
+                    deletedCount
+                });
+
+            } catch (error) {
+                logger.error('Bulk delete media error:', { error: error.message });
+                res.status(500).json({ error: 'Internal server error' });
+            }
+        });
+
+        // Like media
+        this.app.put('/:mediaId/like', async (req, res) => {
+            try {
+                const { mediaId } = req.params;
+
+                // Increment like count
+                await this.incrementMediaLikes(mediaId);
+
+                // Invalidate cache
+                await redisService.del(`media:${mediaId}`);
+
+                res.json({
+                    success: true,
+                    message: 'Media liked successfully'
+                });
+
+            } catch (error) {
+                logger.error('Like media error:', { error: error.message });
+                res.status(500).json({ error: 'Internal server error' });
+            }
+        });
     }
 
-    // Database methods (mock implementations)
+    // Database methods
+    async saveMedia(media) {
+        return new Promise((resolve, reject) => {
+            db.run(
+                'INSERT INTO media (id, eventId, fileName, fileType, fileSize, s3Key, url, uploadedAt, status, uploaderName, uploaderId, caption, privacy, isWatermarked, watermarkText, likes, isProcessing) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                [
+                    media.id,
+                    media.eventId,
+                    media.fileName,
+                    media.fileType,
+                    media.fileSize,
+                    media.s3Key,
+                    media.url,
+                    media.uploadedAt,
+                    media.status,
+                    media.uploaderName,
+                    media.uploaderId,
+                    media.caption,
+                    media.privacy,
+                    media.isWatermarked ? 1 : 0,
+                    media.watermarkText,
+                    media.likes,
+                    media.isProcessing ? 1 : 0
+                ],
+                function (err) {
+                    if (err) {
+                        logger.error('Database error in saveMedia:', { error: err.message });
+                        return reject(err);
+                    }
+                    resolve();
+                }
+            );
+        });
+    }
+
     async getMediaFromDatabase(mediaId) {
-        // Mock data
-        return {
-            id: mediaId,
-            eventId: 'event-123',
-            fileName: 'photo.jpg',
-            fileType: 'image/jpeg',
-            fileSize: 1024,
-            s3Key: 'events/event-123/photo.jpg',
-            url: '/api/proxy-media?key=events%2Fevent-123%2Fphoto.jpg',
-            uploadedAt: new Date().toISOString(),
-            status: 'uploaded'
-        };
+        return new Promise((resolve, reject) => {
+            db.get('SELECT * FROM media WHERE id = ?', [mediaId], (err, row) => {
+                if (err) {
+                    logger.error('Database error in getMediaFromDatabase:', { error: err.message });
+                    return reject(err);
+                }
+                resolve(row);
+            });
+        });
     }
 
     async getMediaByEventFromDatabase(eventId) {
-        // Mock data
-        return [
-            {
-                id: `media-${Date.now()}`,
-                eventId,
-                fileName: 'photo1.jpg',
-                fileType: 'image/jpeg',
-                fileSize: 1024,
-                s3Key: `events/${eventId}/photo1.jpg`,
-                url: `/api/proxy-media?key=${encodeURIComponent(`events/${eventId}/photo1.jpg`)}`,
-                uploadedAt: new Date().toISOString(),
-                status: 'uploaded'
-            },
-            {
-                id: `media-${Date.now() + 1}`,
-                eventId,
-                fileName: 'photo2.jpg',
-                fileType: 'image/jpeg',
-                fileSize: 2048,
-                s3Key: `events/${eventId}/photo2.jpg`,
-                url: `/api/proxy-media?key=${encodeURIComponent(`events/${eventId}/photo2.jpg`)}`,
-                uploadedAt: new Date().toISOString(),
-                status: 'uploaded'
-            }
-        ];
+        return new Promise((resolve, reject) => {
+            db.all('SELECT * FROM media WHERE eventId = ? ORDER BY uploadedAt DESC', [eventId], (err, rows) => {
+                if (err) {
+                    logger.error('Database error in getMediaByEventFromDatabase:', { error: err.message });
+                    return reject(err);
+                }
+                resolve(rows || []);
+            });
+        });
     }
 
     async deleteMediaFromDatabase(mediaId) {
-        // Mock implementation
-        logger.info('Media deleted from database (mock)', { mediaId });
+        return new Promise((resolve, reject) => {
+            db.run('DELETE FROM media WHERE id = ?', [mediaId], function (err) {
+                if (err) {
+                    logger.error('Database error in deleteMediaFromDatabase:', { error: err.message });
+                    return reject(err);
+                }
+                resolve();
+            });
+        });
+    }
+
+    async incrementMediaLikes(mediaId) {
+        return new Promise((resolve, reject) => {
+            db.run(
+                'UPDATE media SET likes = likes + 1 WHERE id = ?',
+                [mediaId],
+                function (err) {
+                    if (err) {
+                        logger.error('Database error in incrementMediaLikes:', { error: err.message });
+                        return reject(err);
+                    }
+                    resolve();
+                }
+            );
+        });
+    }
+
+    async incrementEventMediaCount(eventId) {
+        return new Promise((resolve, reject) => {
+            db.run(
+                'UPDATE events SET mediaCount = mediaCount + 1 WHERE id = ?',
+                [eventId],
+                function (err) {
+                    if (err) {
+                        logger.error('Database error in incrementEventMediaCount:', { error: err.message });
+                        return reject(err);
+                    }
+                    resolve();
+                }
+            );
+        });
+    }
+
+    async decrementEventMediaCount(eventId) {
+        return new Promise((resolve, reject) => {
+            db.run(
+                'UPDATE events SET mediaCount = mediaCount - 1 WHERE id = ? AND mediaCount > 0',
+                [eventId],
+                function (err) {
+                    if (err) {
+                        logger.error('Database error in decrementEventMediaCount:', { error: err.message });
+                        return reject(err);
+                    }
+                    resolve();
+                }
+            );
+        });
     }
 
     // Start the service

@@ -17,7 +17,7 @@ export const isMobileWithPerformanceCheck = (): boolean => {
     const isMobileUA = mobileRegex.test(userAgent);
 
     // Additional performance checks
-    const connection = navigator.connection || ({ effectiveType: '4g' } as any);
+    const connection = (navigator as any).connection || ({ effectiveType: '4g' } as any);
     const isSlowConnection = connection.effectiveType === 'slow-2g' || connection.effectiveType === '2g';
 
     return hasTouch && (isSmallScreen || isMobileUA);

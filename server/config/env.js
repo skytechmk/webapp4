@@ -32,6 +32,15 @@ export const config = {
         PORT: parseInt(process.env.REDIS_PORT || '6379'),
         PASSWORD: process.env.REDIS_PASSWORD,
         DB: parseInt(process.env.REDIS_DB || '0')
+    },
+    DATABASE_MIGRATION: {
+        AUTO_RUN: process.env.AUTO_RUN_MIGRATION === 'true',
+        SHARDING_ENABLED: process.env.SHARDING_ENABLED !== 'false',
+        READ_REPLICAS_ENABLED: process.env.READ_REPLICAS_ENABLED !== 'false',
+        CACHING_ENABLED: process.env.CACHING_ENABLED !== 'false',
+        ARCHIVING_ENABLED: process.env.ARCHIVING_ENABLED !== 'false',
+        SHARD_COUNT: parseInt(process.env.SHARD_COUNT || '4'),
+        REPLICA_COUNT: parseInt(process.env.REPLICA_COUNT || '2')
     }
 };
 

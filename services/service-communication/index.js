@@ -6,12 +6,20 @@ import { logger } from '../../server/services/loggerService.js';
 class ServiceCommunication {
     constructor() {
         this.services = {
-            auth: {
-                url: process.env.AUTH_SERVICE_URL || 'http://localhost:3002',
+            user: {
+                url: process.env.USER_SERVICE_URL || 'http://localhost:3004',
+                socket: null
+            },
+            event: {
+                url: process.env.EVENT_SERVICE_URL || 'http://localhost:3005',
                 socket: null
             },
             media: {
                 url: process.env.MEDIA_SERVICE_URL || 'http://localhost:3003',
+                socket: null
+            },
+            notification: {
+                url: process.env.NOTIFICATION_SERVICE_URL || 'http://localhost:3006',
                 socket: null
             }
         };

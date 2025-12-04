@@ -30,14 +30,14 @@ export const useMobilePerformance = () => {
         window.addEventListener('resize', handleResize);
 
         // Listen for network changes if available
-        if ('connection' in navigator) {
-            (navigator as any).connection.addEventListener('change', handleNetworkChange);
+        if ('connection' in navigator && navigator.connection) {
+            (navigator.connection as any).addEventListener('change', handleNetworkChange);
         }
 
         return () => {
             window.removeEventListener('resize', handleResize);
-            if ('connection' in navigator) {
-                (navigator as any).connection.removeEventListener('change', handleNetworkChange);
+            if ('connection' in navigator && navigator.connection) {
+                (navigator.connection as any).removeEventListener('change', handleNetworkChange);
             }
         };
     }, []);
