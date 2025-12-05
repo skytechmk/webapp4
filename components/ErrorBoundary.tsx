@@ -1,90 +1,61 @@
-import * as React from 'react';
-import * as Sentry from '@sentry/react';
+import React, { ReactNode, useState, useEffect } from 'react';
 
-interface Props {
-  children: React.ReactNode;
-  fallback?: React.ReactNode;
-  onError?: (error: Error, errorInfo: React.ErrorInfo) => void;
+interface ErrorBoundaryProps {
+  children: ReactNode;
+  fallback?: ReactNode;
 }
 
-interface State {
-  hasError: boolean;
-  error?: Error;
-}
+export const ErrorBoundary: React.FC<ErrorBoundaryProps> = ({ children, fallback }) => {
+  const [hasError, setHasError] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
 
-export class ErrorBoundary extends React.Component<Props, State> {
-  constructor(props: Props) {
-    super(props);
-    this.state = { hasError: false };
-  }
+  useEffect(() => {
+    const handleError = (event: ErrorEvent) => {
+      console.error('ErrorBoundary caught an error:', event.error);
+      setHasError(true);
+      setError(event.error);
+      // Optional: Send error to logging service
+      // logErrorToService(event.error);
+    };
 
-  static getDerivedStateFromError(error: Error): State {
-    return { hasError: true, error };
-  }
+    const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+      console.error('ErrorBoundary caught an unhandled promise rejection:', event.reason);
+      setHasError(true);
+      setError(event.reason);
+      // Optional: Send error to logging service
+      // logErrorToService(event.reason);
+    };
 
-  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    console.error('ErrorBoundary caught an error:', error, errorInfo);
+    window.addEventListener('error', handleError);
+    window.addEventListener('unhandledrejection', handleUnhandledRejection);
 
-    // Send to Sentry
-    Sentry.captureException(error, {
-      contexts: {
-        react: {
-          componentStack: errorInfo.componentStack,
-        },
-      },
-    });
+    return () => {
+      window.removeEventListener('error', handleError);
+      window.removeEventListener('unhandledrejection', handleUnhandledRejection);
+    };
+  }, []);
 
-    // Call optional error handler
-    if (this.props.onError) {
-      this.props.onError(error, errorInfo);
-    }
-  }
-
-  render() {
-    if (this.state.hasError) {
-      if (this.props.fallback) {
-        return this.props.fallback;
-      }
-
-      return (
-        <div className="min-h-screen flex items-center justify-center bg-slate-50">
-          <div className="max-w-md w-full bg-white rounded-lg shadow-lg p-6 text-center">
-            <div className="w-16 h-16 mx-auto mb-4 bg-red-100 rounded-full flex items-center justify-center">
-              <svg className="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
-              </svg>
-            </div>
-            <h2 className="text-xl font-semibold text-gray-900 mb-2">Something went wrong</h2>
-            <p className="text-gray-600 mb-6">
-              We encountered an unexpected error. Please try refreshing the page.
-            </p>
-            <button
-              onClick={() => window.location.reload()}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-md font-medium transition-colors"
-            >
-              Refresh Page
-            </button>
-            <details className="mt-4 text-left">
-              <summary className="cursor-pointer text-sm text-gray-500 hover:text-gray-700">
-                Error Details
-              </summary>
-              <pre className="mt-2 text-xs bg-gray-100 p-2 rounded overflow-auto">
-                {this.state.error?.message}
-              </pre>
-            </details>
+  if (hasError) {
+    return fallback || (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <div className="bg-white p-8 rounded-3xl shadow-xl max-w-md w-full text-center border border-red-100">
+          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg className="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+            </svg>
           </div>
+          <h2 className="text-2xl font-bold text-slate-900 mb-2">Something went wrong</h2>
+          <p className="text-slate-500 mb-6">We encountered an unexpected error. Please try refreshing the page.</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="bg-slate-900 text-white px-6 py-3 rounded-xl font-bold hover:bg-slate-800 transition-colors"
+          >
+            Refresh Page
+          </button>
         </div>
-      );
-    }
-
-    return this.props.children;
+      </div>
+    );
   }
-}
 
-// Hook version for functional components
-export const useErrorHandler = () => {
-  return (error: Error, errorInfo?: React.ErrorInfo) => {
-    console.error('Error caught by hook:', error, errorInfo);
-    // Handle error (send to monitoring service, etc.)
-  };
+  return <>{children}</>;
 };

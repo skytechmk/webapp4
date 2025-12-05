@@ -5,7 +5,7 @@ import { TranslateFn } from '../types';
 
 interface GuestLoginModalProps {
   onLogin: (name: string) => void;
-  onRegister: () => void; 
+  onRegister: () => void;
   onCancel: () => void;
   t: TranslateFn;
 }
@@ -31,8 +31,8 @@ export const GuestLoginModal: React.FC<GuestLoginModalProps> = ({ onLogin, onReg
         </button>
 
         <div className="p-8 pb-6 text-center">
-             <h2 className="text-2xl font-black text-slate-900 mb-2">{t('joinParty')}</h2>
-             <p className="text-slate-500 text-sm">{t('chooseAccess')}</p>
+              <h2 className="text-2xl font-black text-slate-900 mb-2">{t('joinParty')}</h2>
+              <p className="text-slate-500 text-sm">{t('chooseAccess')}</p>
         </div>
         
         <div className="px-8 space-y-6 pb-8">

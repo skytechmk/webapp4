@@ -1,20 +1,19 @@
-import * as React from 'react';
-const { useState, useEffect } = React;
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer
+import React, { useState, useEffect } from 'react';
+import { 
+  BarChart, 
+  Bar, 
+  XAxis, 
+  YAxis, 
+  CartesianGrid, 
+  Tooltip, 
+  ResponsiveContainer 
 } from 'recharts';
-import { User, UserRole, TierLevel, Event, TranslateFn, MediaItem, TIER_CONFIG } from '../types';
-import { Trash2, HardDrive, Zap, Calendar, Image as ImageIcon, X, Clock, Eye, Plus, Edit, Save, Camera, Briefcase, AlertTriangle, ZoomIn, Download, Lock, ArrowLeft, LogOut, Mail, Building, ShieldAlert, Users, LayoutGrid, Settings, Crown, Star, RefreshCw, Bell, Check, MessageCircle, Send, Star as StarIcon, ThumbsUp, ThumbsDown, MessageSquare, FileText } from 'lucide-react';
+import { User, UserRole, TierLevel, Event, TranslateFn, MediaItem } from '../types';
+import { Trash2, HardDrive, Zap, Calendar, Image as ImageIcon, X, Clock, Eye, Plus, Edit, Save, Camera, Briefcase, AlertTriangle, ZoomIn, Download, Lock, ArrowLeft, LogOut, Mail, Building, ShieldAlert, ShieldCheck, Users, LayoutGrid, Settings, Crown, Star, RefreshCw } from 'lucide-react';
 import { api } from '../services/api';
+// @ts-ignore
 import { useRegisterSW } from 'virtual:pwa-register/react';
 import { socketService } from '../services/socketService'; // Import socket service
-import { BetaTestingManager } from '../lib/beta-testing';
 
 interface AdminDashboardProps {
   users: User[];
@@ -31,14 +30,13 @@ interface AdminDashboardProps {
   t: TranslateFn;
 }
 
-type Tab = 'users' | 'events' | 'userEvents' | 'support' | 'settings' | 'system' | 'feedback';
-
+type Tab = 'users' | 'events' | 'userEvents' | 'analytics' | 'settings';
 
 interface DeleteConfirmationState {
   isOpen: boolean;
   type: 'user' | 'event' | 'media' | 'system';
   id: string;
-  parentId?: string;
+  parentId?: string; 
   title: string;
   message: string;
 }
@@ -57,48 +55,37 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onLogout,
   t
 }) => {
-  const [activeTab, setActiveTab] = useState<Tab>('users');
+  console.log('AdminDashboard render start', { usersCount: users?.length, eventsCount: events?.length });
 
+  const [activeTab, setActiveTab] = useState<Tab>('users');
+  
   // PWA Update Hook
   const {
     updateServiceWorker,
-  } = useRegisterSW({});
-
+  } = useRegisterSW();
+  
   // Selection State
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
   const [selectedUserForEvents, setSelectedUserForEvents] = useState<User | null>(null);
   const [previewMedia, setPreviewMedia] = useState<MediaItem | null>(null);
 
+  // Bulk Operations State
+  const [selectedUsers, setSelectedUsers] = useState<Set<string>>(new Set());
+  const [bulkOperation, setBulkOperation] = useState<'delete' | 'changeTier' | null>(null);
+  const [bulkTierChange, setBulkTierChange] = useState<TierLevel>(TierLevel.FREE);
+  const [isBulkProcessing, setIsBulkProcessing] = useState(false);
+  
   // Modal/Action State
   const [deleteConfirmation, setDeleteConfirmation] = useState<DeleteConfirmationState | null>(null);
-
-  // System Storage State
-  const [systemStorage, setSystemStorage] = useState<{
-    system: { filesystem: string; size: string; used: string; available: string; usePercent: string };
-    minio: { filesystem: string; size: string; used: string; available: string; usePercent: string };
-    timestamp: string;
-  } | null>(null);
-  const [storageLoading, setStorageLoading] = useState(false);
-
-  // Notifications State
-  const [notifications, setNotifications] = useState<any[]>([]);
-  const [showNotifications, setShowNotifications] = useState(false);
-  const [selectedNotification, setSelectedNotification] = useState<any>(null);
-  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
-
-  // Support Tab State
-  const [supportMessages, setSupportMessages] = useState<any[]>([]);
-  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
-  const [newReply, setNewReply] = useState('');
-  const [isReplying, setIsReplying] = useState(false);
-
+  const [isResetting, setIsResetting] = useState(false);
+  
   // Event Edit State
   const [editingEvent, setEditingEvent] = useState<Event | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [editExpiryType, setEditExpiryType] = useState<'unlimited' | 'custom' | 'immediate'>('custom');
   const [editDurationVal, setEditDurationVal] = useState<number>(30);
   const [editDurationUnit, setEditDurationUnit] = useState<'seconds' | 'minutes' | 'hours' | 'days'>('minutes');
-
+  
   // User Edit State
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [editUserName, setEditUserName] = useState('');
@@ -107,30 +94,80 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [selectedTier, setSelectedTier] = useState<TierLevel>(TierLevel.FREE);
   const [selectedRole, setSelectedRole] = useState<UserRole>(UserRole.USER);
 
-  const storageData = users.map(u => ({
-    name: u.name.split(' ')[0],
-    used: u.storageUsedMb,
-    limit: u.storageLimitMb
-  }));
+  console.log('AdminDashboard processing data');
 
-  // Fetch system storage data when System tab is active
-  useEffect(() => {
-    if (activeTab === 'system' && !systemStorage) {
-      const fetchStorageData = async () => {
-        setStorageLoading(true);
-        try {
-          const data = await api.getSystemStorage();
-          setSystemStorage(data);
-        } catch (error) {
-          console.error('Failed to fetch system storage data:', error);
-          // Storage data fetch failed - continue silently
-        } finally {
-          setStorageLoading(false);
-        }
-      };
-      fetchStorageData();
-    }
-  }, [activeTab, systemStorage]);
+  // Safe data processing with error handling
+  let storageData = [];
+  let totalMedia = 0;
+  let totalViews = 0;
+  let totalDownloads = 0;
+  let activeEvents = 0;
+  let expiredEvents = 0;
+  let tierDistribution = [];
+  let roleDistribution = [];
+  let eventActivityData = [];
+  let mediaTypeData = [];
+
+  try {
+    console.log('AdminDashboard processing data start');
+
+    // Storage data processing
+    storageData = users.map(u => ({
+      name: u?.name?.split(' ')[0] || 'User',
+      used: Math.max(0, u?.storageUsedMb || 0),
+      limit: Math.max(0, u?.storageLimitMb || 0)
+    })).filter(item => item.limit > 0);
+
+    console.log('AdminDashboard storageData processed', storageData);
+
+    // Analytics Data
+    totalMedia = events.reduce((acc, event) => acc + (event?.media?.length || 0), 0);
+    totalViews = events.reduce((acc, event) => acc + (event?.views || 0), 0);
+    totalDownloads = events.reduce((acc, event) => acc + (event?.downloads || 0), 0);
+    activeEvents = events.filter(e => !isExpired(e?.expiresAt)).length;
+    expiredEvents = events.filter(e => isExpired(e?.expiresAt)).length;
+
+    console.log('AdminDashboard analytics data processed', { totalMedia, totalViews, totalDownloads, activeEvents, expiredEvents });
+
+    // Safe tier and role distribution
+    const userLength = users.length || 1;
+    tierDistribution = Object.values(TierLevel).map(tier => ({
+      tier,
+      count: users.filter(u => u?.tier === tier).length,
+      percentage: Math.round((users.filter(u => u?.tier === tier).length / userLength) * 100)
+    }));
+
+    roleDistribution = Object.values(UserRole).map(role => ({
+      role,
+      count: users.filter(u => u?.role === role).length,
+      percentage: Math.round((users.filter(u => u?.role === role).length / userLength) * 100)
+    }));
+
+    eventActivityData = [
+      { name: 'Active', value: activeEvents, color: '#10b981' },
+      { name: 'Expired', value: expiredEvents, color: '#ef4444' }
+    ];
+
+    mediaTypeData = [
+      { name: 'Images', value: events.reduce((acc, e) => acc + (e?.media?.filter(m => m?.type === 'image').length || 0), 0), color: '#6366f1' },
+      { name: 'Videos', value: events.reduce((acc, e) => acc + (e?.media?.filter(m => m?.type === 'video').length || 0), 0), color: '#f59e0b' }
+    ];
+
+    console.log('AdminDashboard data processing completed successfully');
+  } catch (error) {
+    console.error('AdminDashboard data processing error:', error);
+    // Use fallback values
+    storageData = [];
+    totalMedia = 0;
+    totalViews = 0;
+    totalDownloads = 0;
+    activeEvents = 0;
+    expiredEvents = 0;
+    tierDistribution = [];
+    roleDistribution = [];
+    eventActivityData = [];
+    mediaTypeData = [];
+  }
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -143,78 +180,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [previewMedia, editingEvent, editingUser]);
-
-  // Socket listener for upgrade requests
-  useEffect(() => {
-    socketService.connect();
-
-    const handleUpgradeRequest = (notification: any) => {
-      setNotifications(prev => [notification, ...prev]);
-      // Show browser notification if supported
-      if ('Notification' in window && Notification.permission === 'granted') {
-        new Notification('New Upgrade Request', {
-          body: `${notification.userInfo?.name || 'Anonymous user'} requested upgrade to ${notification.tier}`,
-          icon: '/icon-192x192.png'
-        });
-      }
-    };
-
-    socketService.on('upgrade_request', handleUpgradeRequest);
-
-    return () => {
-      socketService.off('upgrade_request', handleUpgradeRequest);
-    };
-  }, []);
-
-  // Close notifications when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (showNotifications && !(event.target as Element).closest('.notification-container')) {
-        setShowNotifications(false);
-      }
-    };
-
-    if (showNotifications) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [showNotifications]);
-
-  // Load support messages when Support tab is active
-  useEffect(() => {
-    if (activeTab === 'support' && supportMessages.length === 0) {
-      const loadSupportMessages = async () => {
-        try {
-          const messages = await api.getSupportMessages();
-          setSupportMessages(messages);
-        } catch (error) {
-          // Support messages load failed - continue silently
-        }
-      };
-      loadSupportMessages();
-    }
-  }, [activeTab, supportMessages.length]);
-
-  // Listen for new support messages
-  useEffect(() => {
-    socketService.connect();
-    const handleNewSupportMessage = (message: any) => {
-      setSupportMessages(prev => {
-        const existing = prev.find(m => m.id === message.id);
-        if (existing) return prev;
-        return [...prev, message];
-      });
-    };
-
-    socketService.on('new_support_message', handleNewSupportMessage);
-
-    return () => {
-      socketService.off('new_support_message', handleNewSupportMessage);
-    };
-  }, []);
 
   // --- Helpers ---
   const getEventHostName = (hostId: string) => {
@@ -239,24 +204,24 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     let icon = null;
 
     if (tier === TierLevel.STUDIO) {
-      badgeColor = 'bg-gradient-to-r from-amber-100 to-yellow-100 text-amber-900 border-amber-300';
-      icon = <Crown size={10} className="mr-1 fill-amber-700" />;
+        badgeColor = 'bg-gradient-to-r from-amber-100 to-yellow-100 text-amber-900 border-amber-300';
+        icon = <Crown size={10} className="mr-1 fill-amber-700" />;
     } else if (tier === TierLevel.PRO) {
-      badgeColor = 'bg-purple-50 text-purple-700 border-purple-200';
-      icon = <Zap size={10} className="mr-1 fill-purple-500" />;
+        badgeColor = 'bg-purple-50 text-purple-700 border-purple-200';
+        icon = <Zap size={10} className="mr-1 fill-purple-500" />;
     } else if (tier === TierLevel.BASIC) {
-      badgeColor = 'bg-blue-50 text-blue-700 border-blue-200';
-      icon = <Star size={10} className="mr-1 fill-blue-500" />;
+        badgeColor = 'bg-blue-50 text-blue-700 border-blue-200';
+        icon = <Star size={10} className="mr-1 fill-blue-500" />;
     } else {
-      // FREE
-      badgeColor = 'bg-slate-100 text-slate-600 border-slate-200';
+        // FREE
+        badgeColor = 'bg-slate-100 text-slate-600 border-slate-200';
     }
 
     return (
-      <span className={`px-2.5 py-1 inline-flex items-center text-xs leading-5 font-bold rounded-full border ${badgeColor}`}>
-        {icon}
-        {tier}
-      </span>
+        <span className={`px-2.5 py-1 inline-flex items-center text-xs leading-5 font-bold rounded-full border ${badgeColor}`}>
+            {icon}
+            {tier}
+        </span>
     );
   };
 
@@ -291,10 +256,33 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     });
   };
 
+  const promptResetSystem = () => {
+      setDeleteConfirmation({
+          isOpen: true,
+          type: 'system',
+          id: 'system-reset',
+          title: '⚠️ DANGER: RESET SYSTEM',
+          message: 'Are you absolutely sure? This will WIPE ALL DATA (Users, Events, Photos, Videos) from the database and storage. This action cannot be undone. You will be logged out.'
+      });
+  };
 
   const executeDelete = async () => {
     if (!deleteConfirmation) return;
     const { type, id, parentId } = deleteConfirmation;
+    
+    if (type === 'system') {
+        setIsResetting(true);
+        try {
+            await api.resetSystem();
+            alert("System reset successful. Refreshing...");
+            onLogout();
+            window.location.reload();
+        } catch (error: any) {
+            alert("Failed to reset system: " + (error.message || error));
+            setIsResetting(false);
+        }
+        return;
+    }
 
     if (type === 'user') {
       onDeleteUser(id);
@@ -309,7 +297,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         ...prev,
         media: prev.media.filter(m => m.id !== id)
       }) : null);
-
+      
       if (previewMedia?.id === id) {
         setPreviewMedia(null);
       }
@@ -321,58 +309,57 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setEditingEvent(evt);
     setEditTitle(evt.title);
     if (!evt.expiresAt) {
-      setEditExpiryType('unlimited');
+        setEditExpiryType('unlimited');
     } else {
-      setEditExpiryType('custom');
-      setEditDurationVal(30);
-      setEditDurationUnit('minutes');
+        setEditExpiryType('custom');
+        setEditDurationVal(30);
+        setEditDurationUnit('minutes');
     }
   };
 
   const handleSaveEventEdit = () => {
-    if (!editingEvent) return;
-    let newExpiresAt: string | null = editingEvent.expiresAt;
-    if (editExpiryType === 'unlimited') {
-      newExpiresAt = null;
-    } else if (editExpiryType === 'immediate') {
-      newExpiresAt = new Date().toISOString();
-    } else {
-      const now = new Date().getTime();
-      let multiplier = 1000;
-      if (editDurationUnit === 'minutes') multiplier = 60 * 1000;
-      if (editDurationUnit === 'hours') multiplier = 60 * 60 * 1000;
-      if (editDurationUnit === 'days') multiplier = 24 * 60 * 60 * 1000;
-      newExpiresAt = new Date(now + (editDurationVal * multiplier)).toISOString();
-    }
-    const updatedEvent: Event = {
-      ...editingEvent,
-      title: editTitle,
-      expiresAt: newExpiresAt
-    };
-    onUpdateEvent(updatedEvent);
-    setEditingEvent(null);
+      if (!editingEvent) return;
+      let newExpiresAt: string | null = editingEvent.expiresAt;
+      if (editExpiryType === 'unlimited') {
+          newExpiresAt = null;
+      } else if (editExpiryType === 'immediate') {
+          newExpiresAt = new Date().toISOString();
+      } else {
+          const now = new Date().getTime();
+          let multiplier = 1000; 
+          if (editDurationUnit === 'minutes') multiplier = 60 * 1000;
+          if (editDurationUnit === 'hours') multiplier = 60 * 60 * 1000;
+          if (editDurationUnit === 'days') multiplier = 24 * 60 * 60 * 1000;
+          newExpiresAt = new Date(now + (editDurationVal * multiplier)).toISOString();
+      }
+      const updatedEvent: Event = {
+          ...editingEvent,
+          title: editTitle,
+          expiresAt: newExpiresAt
+      };
+      onUpdateEvent(updatedEvent);
+      setEditingEvent(null);
   };
 
   const openEditUserModal = (user: User) => {
     setEditingUser(user);
     setEditUserName(user.name);
     setEditUserEmail(user.email);
-    setEditUserStudio(TIER_CONFIG[user.tier].allowBranding ? (user.studioName || '') : '');
+    setEditUserStudio(user.studioName || '');
     setSelectedTier(user.tier);
     setSelectedRole(user.role);
   };
 
   const handleSaveUserEdit = () => {
     if (!editingUser) return;
-
-    const config = TIER_CONFIG[selectedTier];
+    
     const updatedUser: User = {
-      ...editingUser,
-      name: editUserName,
-      email: editUserEmail,
-      studioName: config.allowBranding ? editUserStudio : undefined,
-      role: selectedRole,
-      tier: selectedTier
+        ...editingUser,
+        name: editUserName,
+        email: editUserEmail,
+        studioName: editUserStudio,
+        role: selectedRole,
+        tier: selectedTier
     };
 
     onUpdateUser(updatedUser);
@@ -391,68 +378,90 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // UPDATED: Enhanced Force Update Handler
   const handleForceUpdate = async () => {
-    if (confirm("Force update app to latest version? This will unregister all service workers and reload the page.")) {
+      if (confirm("Force update app to latest version? This will unregister all service workers and reload the page.")) {
+          
+          // 1. Try the plugin method first
+          try {
+             await updateServiceWorker(true);
+          } catch (e) { console.error(e); }
 
-      // 1. Try the plugin method first
-      try {
-        await updateServiceWorker(true);
-      } catch (e) { console.error(e); }
+          // 2. Manually unregister all service workers (The nuclear option)
+          if ('serviceWorker' in navigator) {
+              const registrations = await navigator.serviceWorker.getRegistrations();
+              for (const registration of registrations) {
+                  await registration.unregister();
+              }
+          }
 
-      // 2. Manually unregister all service workers (The nuclear option)
-      if ('serviceWorker' in navigator) {
-        const registrations = await navigator.serviceWorker.getRegistrations();
-        for (const registration of registrations) {
-          await registration.unregister();
-        }
+          // 3. Force reload from server (ignoring cache)
+          window.location.reload();
       }
-
-      // 3. Force reload from server (ignoring cache)
-      window.location.reload();
-    }
   };
 
   // NEW: Handle Global Client Reload
   const handleGlobalClientReload = () => {
-    if (confirm("⚠️ FORCE RELOAD ALL CLIENTS?\n\nThis will cause every user currently on the site to refresh their page immediately. Use this only after pushing a critical update.")) {
-      const token = localStorage.getItem('snapify_token');
-      if (token) {
-        // Emit event via socket service
-        if (socketService.socket) {
-          socketService.socket.emit('admin_trigger_reload', token);
-          alert("Signal sent. Clients should reload momentarily.");
-        } else {
-          alert("Socket not connected.");
-        }
+      if (confirm("⚠️ FORCE RELOAD ALL CLIENTS?\n\nThis will cause every user currently on the site to refresh their page immediately. Use this only after pushing a critical update.")) {
+          const token = localStorage.getItem('snapify_token');
+          if (token) {
+              // Emit event via socket service
+              if (socketService.socket) {
+                  socketService.socket.emit('admin_trigger_reload', token);
+                  alert("Signal sent. Clients should reload momentarily.");
+              } else {
+                  alert("Socket not connected.");
+              }
+          }
       }
-    }
   };
 
-  // Support helper functions
-  const sendReply = async () => {
-    if (!newReply.trim() || !selectedUserId || isReplying) return;
-
-    setIsReplying(true);
-    try {
-      await api.sendAdminReply(selectedUserId, newReply.trim());
-      setNewReply('');
-    } catch (error) {
-      // Reply send failed - continue silently
-    } finally {
-      setIsReplying(false);
-    }
+  // Bulk Operations
+  const toggleUserSelection = (userId: string) => {
+      const newSelected = new Set(selectedUsers);
+      if (newSelected.has(userId)) {
+          newSelected.delete(userId);
+      } else {
+          newSelected.add(userId);
+      }
+      setSelectedUsers(newSelected);
   };
 
-  const markAsRead = async (messageId: string) => {
-    try {
-      await api.markMessageAsRead(messageId);
-      setSupportMessages(prev =>
-        prev.map(msg =>
-          msg.id === messageId ? { ...msg, isRead: true } : msg
-        )
-      );
-    } catch (error) {
-      // Mark as read failed - continue silently
-    }
+  const selectAllUsers = () => {
+      if (selectedUsers.size === users.length) {
+          setSelectedUsers(new Set());
+      } else {
+          setSelectedUsers(new Set(users.map(u => u.id)));
+      }
+  };
+
+  const executeBulkOperation = async () => {
+      if (selectedUsers.size === 0) return;
+
+      setIsBulkProcessing(true);
+      try {
+          if (bulkOperation === 'delete') {
+              const userIds = Array.from(selectedUsers);
+              for (const userId of userIds) {
+                  await onDeleteUser(userId);
+              }
+              alert(`Successfully deleted ${userIds.length} users.`);
+          } else if (bulkOperation === 'changeTier') {
+              const userIds = Array.from(selectedUsers);
+              for (const userId of userIds) {
+                  const user = users.find(u => u.id === userId);
+                  if (user) {
+                      const updatedUser = { ...user, tier: bulkTierChange };
+                      await onUpdateUser(updatedUser);
+                  }
+              }
+              alert(`Successfully updated ${userIds.length} users to ${bulkTierChange} tier.`);
+          }
+          setSelectedUsers(new Set());
+          setBulkOperation(null);
+      } catch (error) {
+          alert('Bulk operation failed. Please try again.');
+      } finally {
+          setIsBulkProcessing(false);
+      }
   };
 
   const renderUserEvents = () => {
@@ -461,7 +470,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     return (
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
         <div className="p-6 border-b border-slate-100 flex items-center gap-4 bg-slate-50">
-          <button
+          <button 
             onClick={backToUsers}
             className="flex items-center gap-2 text-slate-600 hover:text-slate-800 transition-colors bg-white border border-slate-300 px-3 py-1.5 rounded-lg text-sm font-medium"
           >
@@ -544,907 +553,733 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     );
   };
 
-  const renderSupport = () => {
-
-    // Group messages by user
-    const conversations = supportMessages.reduce((acc: any, message: any) => {
-      const userId = message.userId || 'anonymous';
-      if (!acc[userId]) {
-        acc[userId] = {
-          userId,
-          userName: message.userName,
-          userEmail: message.userEmail,
-          messages: [],
-          lastMessage: message.createdAt,
-          unreadCount: 0
-        };
-      }
-      acc[userId].messages.push(message);
-      acc[userId].lastMessage = message.createdAt;
-      if (!message.isFromAdmin && !message.isRead) {
-        acc[userId].unreadCount++;
-      }
-      return acc;
-    }, {});
-
-    const sortedConversations = Object.values(conversations).sort((a: any, b: any) =>
-      new Date(b.lastMessage).getTime() - new Date(a.lastMessage).getTime()
-    );
-
-    const selectedConversation = selectedUserId ? conversations[selectedUserId] : null;
-
-
-    return (
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-        <div className="p-6 border-b border-slate-100 flex items-center gap-4">
-          <div className="w-12 h-12 bg-indigo-100 rounded-xl flex items-center justify-center">
-            <MessageCircle className="text-indigo-600" size={24} />
-          </div>
-          <div>
-            <h3 className="text-lg font-bold text-slate-900">Support Chat Management</h3>
-            <p className="text-sm text-slate-500">Manage customer support conversations</p>
-          </div>
-        </div>
-
-        <div className="flex h-[600px]">
-          {/* Conversations List */}
-          <div className="w-1/3 border-r border-slate-200 flex flex-col">
-            <div className="p-4 border-b border-slate-100">
-              <h4 className="font-bold text-slate-900">Conversations ({sortedConversations.length})</h4>
-            </div>
-            <div className="flex-1 overflow-y-auto">
-              {sortedConversations.length === 0 ? (
-                <div className="p-8 text-center text-slate-500">
-                  <MessageCircle size={48} className="mx-auto mb-4 text-slate-300" />
-                  <p className="font-medium">No conversations yet</p>
-                  <p className="text-sm">Support messages will appear here</p>
-                </div>
-              ) : (
-                sortedConversations.map((conv: any) => {
-                  const user = users.find(u => u.id === conv.userId);
-                  return (
-                    <div
-                      key={conv.userId}
-                      onClick={() => setSelectedUserId(conv.userId)}
-                      className={`p-4 border-b border-slate-100 cursor-pointer hover:bg-slate-50 transition-colors ${selectedUserId === conv.userId ? 'bg-indigo-50 border-l-4 border-l-indigo-500' : ''
-                        }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center text-slate-600 font-bold">
-                          {conv.userName.charAt(0).toUpperCase()}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between">
-                            <p className="font-bold text-slate-900 truncate">{conv.userName}</p>
-                            {conv.unreadCount > 0 && (
-                              <span className="bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center font-bold">
-                                {conv.unreadCount}
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-sm text-slate-500 truncate">{conv.userEmail || 'No email'}</p>
-                          {user && (
-                            <div className="flex items-center gap-2 mt-1">
-                              {renderTierBadge(user.tier)}
-                            </div>
-                          )}
-                          <p className="text-xs text-slate-400 mt-1">
-                            {new Date(conv.lastMessage).toLocaleString()}
-                          </p>
-                        </div>
+  const renderAnalytics = () => {
+      return (
+          <div className="space-y-8 animate-in fade-in duration-300">
+              {/* Overview Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                  <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col">
+                      <div className="flex items-center justify-between mb-4">
+                          <span className="text-sm font-bold text-slate-500 uppercase tracking-wider">Total Media</span>
+                          <div className="p-2 bg-purple-50 rounded-lg text-purple-600"><ImageIcon size={20} /></div>
                       </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
-
-          {/* Chat Window */}
-          <div className="flex-1 flex flex-col">
-            {selectedConversation ? (
-              <>
-                {/* Chat Header */}
-                <div className="p-4 border-b border-slate-100 bg-slate-50">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center text-slate-600 font-bold">
-                      {selectedConversation.userName.charAt(0).toUpperCase()}
-                    </div>
-                    <div>
-                      <h4 className="font-bold text-slate-900">{selectedConversation.userName}</h4>
-                      <p className="text-sm text-slate-500">{selectedConversation.userEmail || 'No email provided'}</p>
-                    </div>
+                      <span className="text-4xl font-black text-slate-900">{totalMedia}</span>
+                      <span className="text-sm text-slate-500 mt-1">Across all events</span>
                   </div>
-                </div>
-
-                {/* Messages */}
-                <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                  {selectedConversation.messages.map((message: any) => (
-                    <div
-                      key={message.id}
-                      className={`flex ${message.isFromAdmin ? 'justify-end' : 'justify-start'}`}
-                    >
-                      <div
-                        className={`max-w-xs lg:max-w-md px-4 py-2 rounded-2xl ${message.isFromAdmin
-                          ? 'bg-indigo-600 text-white'
-                          : 'bg-slate-100 text-slate-900'
-                          }`}
-                      >
-                        <p className="text-sm">{message.message}</p>
-                        <p className={`text-xs mt-1 ${message.isFromAdmin ? 'text-indigo-200' : 'text-slate-500'
-                          }`}>
-                          {new Date(message.createdAt).toLocaleTimeString()}
-                        </p>
+                  <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col">
+                      <div className="flex items-center justify-between mb-4">
+                          <span className="text-sm font-bold text-slate-500 uppercase tracking-wider">Total Views</span>
+                          <div className="p-2 bg-blue-50 rounded-lg text-blue-600"><Eye size={20} /></div>
                       </div>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Reply Input */}
-                <div className="p-4 border-t border-slate-100 bg-white">
-                  <div className="flex gap-2">
-                    <input
-                      id="admin-reply-input"
-                      name="admin-reply"
-                      type="text"
-                      value={newReply}
-                      onChange={(e) => setNewReply(e.target.value)}
-                      onKeyPress={(e) => e.key === 'Enter' && sendReply()}
-                      placeholder="Type your reply..."
-                      className="flex-1 px-4 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
-                      autoComplete="off"
-                    />
-                    <button
-                      onClick={sendReply}
-                      disabled={!newReply.trim() || isReplying}
-                      className="px-6 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                    >
-                      {isReplying ? (
-                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      ) : (
-                        <Send size={16} />
-                      )}
-                      Send
-                    </button>
+                      <span className="text-4xl font-black text-slate-900">{totalViews.toLocaleString()}</span>
+                      <span className="text-sm text-slate-500 mt-1">Event gallery views</span>
                   </div>
-                </div>
-              </>
-            ) : (
-              <div className="flex-1 flex items-center justify-center text-slate-500">
-                <div className="text-center">
-                  <MessageCircle size={64} className="mx-auto mb-4 text-slate-300" />
-                  <p className="font-medium">Select a conversation to start chatting</p>
-                  <p className="text-sm">Choose a user from the list to view their messages</p>
-                </div>
+                  <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col">
+                      <div className="flex items-center justify-between mb-4">
+                          <span className="text-sm font-bold text-slate-500 uppercase tracking-wider">Downloads</span>
+                          <div className="p-2 bg-green-50 rounded-lg text-green-600"><Download size={20} /></div>
+                      </div>
+                      <span className="text-4xl font-black text-slate-900">{totalDownloads.toLocaleString()}</span>
+                      <span className="text-sm text-slate-500 mt-1">ZIP downloads</span>
+                  </div>
+                  <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col">
+                      <div className="flex items-center justify-between mb-4">
+                          <span className="text-sm font-bold text-slate-500 uppercase tracking-wider">Active Events</span>
+                          <div className="p-2 bg-emerald-50 rounded-lg text-emerald-600"><Zap size={20} /></div>
+                      </div>
+                      <span className="text-4xl font-black text-slate-900">{activeEvents}</span>
+                      <span className="text-sm text-slate-500 mt-1">Currently accessible</span>
+                  </div>
               </div>
-            )}
+
+              {/* Charts Section */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                  {/* Event Status Chart */}
+                  <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                      <h3 className="text-lg font-bold text-slate-900 mb-6">Event Status Distribution</h3>
+                      <div className="space-y-4">
+                          {eventActivityData.map((item) => (
+                              <div key={item.name} className="flex items-center justify-between">
+                                  <div className="flex items-center gap-3">
+                                      <div className={`w-4 h-4 rounded-full`} style={{ backgroundColor: item.color }}></div>
+                                      <span className="font-medium text-slate-700">{item.name} Events</span>
+                                  </div>
+                                  <span className="font-bold text-slate-900">{item.value}</span>
+                              </div>
+                          ))}
+                      </div>
+                  </div>
+
+                  {/* Media Type Distribution */}
+                  <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                      <h3 className="text-lg font-bold text-slate-900 mb-6">Media Type Distribution</h3>
+                      <div className="space-y-4">
+                          {mediaTypeData.map((item) => (
+                              <div key={item.name} className="flex items-center justify-between">
+                                  <div className="flex items-center gap-3">
+                                      <div className={`w-4 h-4 rounded-full`} style={{ backgroundColor: item.color }}></div>
+                                      <span className="font-medium text-slate-700">{item.name}</span>
+                                  </div>
+                                  <span className="font-bold text-slate-900">{item.value}</span>
+                              </div>
+                          ))}
+                      </div>
+                  </div>
+              </div>
+
+              {/* User Analytics */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                  {/* Tier Distribution */}
+                  <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                      <h3 className="text-lg font-bold text-slate-900 mb-6">User Tier Distribution</h3>
+                      <div className="space-y-3">
+                          {tierDistribution.map((item) => (
+                              <div key={item.tier} className="flex items-center justify-between">
+                                  <span className="font-medium text-slate-700">{item.tier}</span>
+                                  <div className="flex items-center gap-3">
+                                      <div className="w-24 bg-slate-200 rounded-full h-2">
+                                          <div
+                                              className="bg-indigo-500 h-2 rounded-full transition-all duration-300"
+                                              style={{ width: `${item.percentage}%` }}
+                                          ></div>
+                                      </div>
+                                      <span className="font-bold text-slate-900 w-12 text-right">{item.percentage}%</span>
+                                  </div>
+                              </div>
+                          ))}
+                      </div>
+                  </div>
+
+                  {/* Role Distribution */}
+                  <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                      <h3 className="text-lg font-bold text-slate-900 mb-6">User Role Distribution</h3>
+                      <div className="space-y-3">
+                          {roleDistribution.map((item) => (
+                              <div key={item.role} className="flex items-center justify-between">
+                                  <span className="font-medium text-slate-700">{item.role}</span>
+                                  <div className="flex items-center gap-3">
+                                      <div className="w-24 bg-slate-200 rounded-full h-2">
+                                          <div
+                                              className="bg-purple-500 h-2 rounded-full transition-all duration-300"
+                                              style={{ width: `${item.percentage}%` }}
+                                          ></div>
+                                      </div>
+                                      <span className="font-bold text-slate-900 w-12 text-right">{item.percentage}%</span>
+                                  </div>
+                              </div>
+                          ))}
+                      </div>
+                  </div>
+              </div>
+
+              {/* Top Events Table */}
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                  <div className="p-6 border-b border-slate-100">
+                      <h3 className="text-lg font-bold text-slate-900">Top Performing Events</h3>
+                      <p className="text-sm text-slate-500 mt-1">Events ranked by total views</p>
+                  </div>
+                  <div className="overflow-x-auto">
+                      <table className="w-full">
+                          <thead className="bg-slate-50 border-b border-slate-200">
+                              <tr>
+                                  <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Event</th>
+                                  <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Host</th>
+                                  <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Views</th>
+                                  <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Downloads</th>
+                                  <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Media</th>
+                              </tr>
+                          </thead>
+                          <tbody className="bg-white divide-y divide-slate-100">
+                              {events
+                                  .sort((a, b) => (b.views || 0) - (a.views || 0))
+                                  .slice(0, 10)
+                                  .map((evt) => (
+                                  <tr key={evt.id} className="hover:bg-slate-50 transition-colors">
+                                      <td className="px-6 py-4 whitespace-nowrap">
+                                          <div className="text-sm font-bold text-slate-900">{evt.title}</div>
+                                          <div className="text-xs text-slate-500">{evt.date || 'No date'}</div>
+                                      </td>
+                                      <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-700">
+                                          {getEventHostName(evt.hostId)}
+                                      </td>
+                                      <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-slate-900">
+                                          {(evt.views || 0).toLocaleString()}
+                                      </td>
+                                      <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-slate-900">
+                                          {(evt.downloads || 0).toLocaleString()}
+                                      </td>
+                                      <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-slate-900">
+                                          {evt.media.length}
+                                      </td>
+                                  </tr>
+                              ))}
+                          </tbody>
+                      </table>
+                  </div>
+              </div>
+
+              {/* System Health */}
+              <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                  <h3 className="text-lg font-bold text-slate-900 mb-6">System Health</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      <div className="text-center">
+                          <div className="w-16 h-16 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-3 border border-green-100">
+                              <ShieldCheck className="text-green-600" size={24} />
+                          </div>
+                          <h4 className="font-bold text-slate-900">Server Status</h4>
+                          <p className="text-sm text-slate-500">Operational</p>
+                      </div>
+                      <div className="text-center">
+                          <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-3 border border-blue-100">
+                              <HardDrive className="text-blue-600" size={24} />
+                          </div>
+                          <h4 className="font-bold text-slate-900">Database</h4>
+                          <p className="text-sm text-slate-500">Connected</p>
+                      </div>
+                      <div className="text-center">
+                          <div className="w-16 h-16 bg-purple-50 rounded-full flex items-center justify-center mx-auto mb-3 border border-purple-100">
+                              <Zap className="text-purple-600" size={24} />
+                          </div>
+                          <h4 className="font-bold text-slate-900">Real-time</h4>
+                          <p className="text-sm text-slate-500">Active</p>
+                      </div>
+                  </div>
+              </div>
           </div>
-        </div>
-      </div>
-    );
+      );
   };
 
   const renderSettings = () => {
-    return (
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden p-8 animate-in fade-in duration-300">
-        <div className="max-w-3xl mx-auto">
-          <div className="text-center mb-10">
-            <div className="w-20 h-20 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-4 border border-red-100">
-              <ShieldAlert className="text-red-600" size={40} />
-            </div>
-            <h2 className="text-3xl font-black text-slate-900 mb-2">System Settings</h2>
-            <p className="text-slate-500">
-              Manage global configurations and perform critical maintenance tasks.
-            </p>
-          </div>
+      return (
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden p-8 animate-in fade-in duration-300">
+              <div className="max-w-3xl mx-auto">
+                  <div className="text-center mb-10">
+                      <div className="w-20 h-20 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-4 border border-red-100">
+                          <ShieldAlert className="text-red-600" size={40} />
+                      </div>
+                      <h2 className="text-3xl font-black text-slate-900 mb-2">System Settings</h2>
+                      <p className="text-slate-500">
+                          Manage global configurations and perform critical maintenance tasks.
+                      </p>
+                  </div>
 
-          <div className="space-y-6">
-            {/* Force Update Card */}
-            <div className="border border-indigo-200 rounded-2xl p-6 bg-indigo-50/50 flex items-center justify-between">
-              <div>
-                <h4 className="text-lg font-bold text-indigo-900 mb-1 flex items-center gap-2">
-                  <RefreshCw size={18} /> App Updates
-                </h4>
-                <p className="text-sm text-indigo-700">
-                  Force this browser to fetch the latest version of the application immediately.
-                </p>
+                  <div className="space-y-6">
+                      {/* Force Update Card */}
+                      <div className="border border-indigo-200 rounded-2xl p-6 bg-indigo-50/50 flex items-center justify-between">
+                          <div>
+                              <h4 className="text-lg font-bold text-indigo-900 mb-1 flex items-center gap-2">
+                                  <RefreshCw size={18}/> App Updates
+                              </h4>
+                              <p className="text-sm text-indigo-700">
+                                  Force this browser to fetch the latest version of the application immediately.
+                              </p>
+                          </div>
+                          <button
+                              onClick={handleForceUpdate}
+                              className="py-2.5 px-5 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition-all shadow-md flex items-center gap-2"
+                          >
+                              <RefreshCw size={16} />
+                              Force Reload App
+                          </button>
+                      </div>
+
+                      {/* NEW: Global Client Force Reload Card */}
+                      <div className="border border-amber-200 rounded-2xl p-6 bg-amber-50/50 flex items-center justify-between">
+                          <div>
+                              <h4 className="text-lg font-bold text-amber-900 mb-1 flex items-center gap-2">
+                                  <Zap size={18}/> Global Client Refresh
+                              </h4>
+                              <p className="text-sm text-amber-700 max-w-md">
+                                  Send a signal to <strong>ALL connected users</strong> to unregister their service worker and reload the page. Use this after deploying a new version to ensure everyone gets it immediately.
+                              </p>
+                          </div>
+                          <button
+                              onClick={handleGlobalClientReload}
+                              className="py-2.5 px-5 bg-amber-600 text-white font-bold rounded-xl hover:bg-amber-700 transition-all shadow-md flex items-center gap-2"
+                          >
+                              <RefreshCw size={16} />
+                              Reload All Clients
+                          </button>
+                      </div>
+
+                      {/* Reset Card */}
+                      <div className="border border-red-200 rounded-2xl p-8 bg-red-50/50 relative overflow-hidden">
+                          <div className="absolute top-0 right-0 p-4 opacity-10">
+                              <AlertTriangle size={120} className="text-red-500" />
+                          </div>
+                          <div className="relative z-10">
+                              <h4 className="text-xl font-bold text-red-900 mb-2 flex items-center gap-2">
+                                  <Trash2 size={20}/> Danger Zone
+                              </h4>
+                              <p className="text-sm text-red-700 mb-6 max-w-xl leading-relaxed">
+                                  Performs a hard reset of the entire SnapifY instance. This action will irreversibly delete
+                                  <strong> ALL</strong> users, events, photos, videos, and comments from the database and clear
+                                  all files from storage.
+                              </p>
+                              <button
+                                  onClick={promptResetSystem}
+                                  className="py-3 px-6 bg-red-600 text-white font-bold rounded-xl hover:bg-red-700 transition-all shadow-lg shadow-red-500/20 flex items-center gap-2"
+                              >
+                                  <ShieldAlert size={18} />
+                                  Reset System Database
+                              </button>
+                          </div>
+                      </div>
+                  </div>
               </div>
-              <button
-                onClick={handleForceUpdate}
-                className="py-2.5 px-5 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition-all shadow-md flex items-center gap-2"
-              >
-                <RefreshCw size={16} />
-                Force Reload App
-              </button>
-            </div>
-
-            {/* NEW: Global Client Force Reload Card */}
-            <div className="border border-amber-200 rounded-2xl p-6 bg-amber-50/50 flex items-center justify-between">
-              <div>
-                <h4 className="text-lg font-bold text-amber-900 mb-1 flex items-center gap-2">
-                  <Zap size={18} /> Global Client Refresh
-                </h4>
-                <p className="text-sm text-amber-700 max-w-md">
-                  Send a signal to <strong>ALL connected users</strong> to unregister their service worker and reload the page. Use this after deploying a new version to ensure everyone gets it immediately.
-                </p>
-              </div>
-              <button
-                onClick={handleGlobalClientReload}
-                className="py-2.5 px-5 bg-amber-600 text-white font-bold rounded-xl hover:bg-amber-700 transition-all shadow-md flex items-center gap-2"
-              >
-                <RefreshCw size={16} />
-                Reload All Clients
-              </button>
-            </div>
-
           </div>
-        </div>
-      </div>
-    );
+      );
   }
 
-  const renderSystem = () => {
-    return (
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden p-8 animate-in fade-in duration-300">
-        <div className="max-w-4xl mx-auto">
-          <div className="text-center mb-10">
-            <div className="w-20 h-20 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-4 border border-green-100">
-              <HardDrive className="text-green-600" size={40} />
-            </div>
-            <h2 className="text-3xl font-black text-slate-900 mb-2">System Storage</h2>
-            <p className="text-slate-500">
-              Real-time monitoring of system and storage capacity.
-            </p>
-          </div>
-
-          <div className="space-y-6">
-            {/* System Storage Card */}
-            <div className="border border-slate-200 rounded-2xl p-6 bg-slate-50/50">
-              <h4 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
-                <HardDrive size={18} /> System Disk Usage
-              </h4>
-              {storageLoading ? (
-                <div className="flex items-center justify-center py-8">
-                  <div className="animate-spin border-2 border-slate-300 border-t-slate-600 rounded-full w-8 h-8"></div>
-                  <span className="ml-3 text-slate-600">Loading storage info...</span>
-                </div>
-              ) : systemStorage ? (
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                  <div className="bg-white p-4 rounded-xl border border-slate-200">
-                    <div className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-1">Filesystem</div>
-                    <div className="text-lg font-black text-slate-900">{systemStorage.system.filesystem}</div>
-                  </div>
-                  <div className="bg-white p-4 rounded-xl border border-slate-200">
-                    <div className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-1">Total Size</div>
-                    <div className="text-lg font-black text-slate-900">{systemStorage.system.size}</div>
-                  </div>
-                  <div className="bg-white p-4 rounded-xl border border-slate-200">
-                    <div className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-1">Used</div>
-                    <div className="text-lg font-black text-slate-900">{systemStorage.system.used}</div>
-                  </div>
-                  <div className="bg-white p-4 rounded-xl border border-slate-200">
-                    <div className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-1">Available</div>
-                    <div className="text-lg font-black text-slate-900">{systemStorage.system.available}</div>
-                  </div>
-                </div>
-              ) : (
-                <div className="text-center py-8 text-slate-500">
-                  <HardDrive size={48} className="mx-auto mb-4 text-slate-300" />
-                  <p>Unable to load storage information</p>
-                </div>
-              )}
-            </div>
-
-            {/* MinIO Storage Card */}
-            <div className="border border-slate-200 rounded-2xl p-6 bg-slate-50/50">
-              <h4 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
-                <HardDrive size={18} /> MinIO Storage Usage
-              </h4>
-              {systemStorage ? (
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                  <div className="bg-white p-4 rounded-xl border border-slate-200">
-                    <div className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-1">Filesystem</div>
-                    <div className="text-lg font-black text-slate-900">{systemStorage.minio.filesystem}</div>
-                  </div>
-                  <div className="bg-white p-4 rounded-xl border border-slate-200">
-                    <div className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-1">Total Size</div>
-                    <div className="text-lg font-black text-slate-900">{systemStorage.minio.size}</div>
-                  </div>
-                  <div className="bg-white p-4 rounded-xl border border-slate-200">
-                    <div className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-1">Used</div>
-                    <div className="text-lg font-black text-slate-900">{systemStorage.minio.used}</div>
-                  </div>
-                  <div className="bg-white p-4 rounded-xl border border-slate-200">
-                    <div className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-1">Available</div>
-                    <div className="text-lg font-black text-slate-900">{systemStorage.minio.available}</div>
-                  </div>
-                </div>
-              ) : (
-                <div className="text-center py-8 text-slate-500">
-                  <HardDrive size={48} className="mx-auto mb-4 text-slate-300" />
-                  <p>Unable to load MinIO information</p>
-                </div>
-              )}
-            </div>
-
-            {/* System Lab Card */}
-            <div className="border border-red-200 rounded-2xl p-6 bg-red-50/30">
-              <div className="flex items-center gap-3 mb-6">
-                <div className="w-12 h-12 bg-red-100 rounded-xl flex items-center justify-center border border-red-200">
-                  <ShieldAlert className="text-red-600" size={24} />
-                </div>
-                <div>
-                  <h4 className="text-xl font-black text-red-900">System Lab</h4>
-                  <p className="text-sm text-red-700 font-medium">Danger Zone - Administrative Operations</p>
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                {/* Clean MinIO Bucket */}
-                <div className="bg-white p-4 rounded-xl border border-red-200">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h5 className="font-bold text-slate-900">Clean MinIO Storage Bucket</h5>
-                      <p className="text-sm text-slate-600 mt-1">
-                        Permanently delete all files and objects from the MinIO storage bucket.
-                        This action cannot be undone.
-                      </p>
-                    </div>
-                    <button
-                      onClick={async () => {
-                        const confirmed = confirm('🚨 CRITICAL WARNING 🚨\n\n' +
-                          'This will PERMANENTLY DELETE ALL FILES from the MinIO storage bucket!\n\n' +
-                          '• All user uploaded media will be lost\n' +
-                          '• Event galleries will become empty\n' +
-                          '• This action CANNOT be undone\n\n' +
-                          'Type "YES" to confirm:');
-
-                        if (confirmed) {
-                          const secondConfirm = prompt('Type "YES" to confirm permanent deletion:');
-                          if (secondConfirm === 'YES') {
-                            try {
-                              const result = await api.cleanMinIOBucket();
-                              alert(`✅ Bucket cleaned successfully!\n\n` +
-                                `📁 Deleted: ${result.deletedCount} objects\n` +
-                                `💾 Freed: ${result.totalSize}\n\n` +
-                                `⚠️  All media files have been permanently removed.`);
-                              // Refresh storage data
-                              setSystemStorage(null);
-                            } catch (error) {
-                              console.error('Failed to clean bucket:', error);
-                              alert('❌ Failed to clean bucket. Check console for details.');
-                            }
-                          }
-                        }
-                      }}
-                      className="px-4 py-2 bg-red-600 text-white text-sm font-bold rounded-lg hover:bg-red-700 transition-colors flex items-center gap-2 shadow-lg shadow-red-500/20"
-                    >
-                      <Trash2 size={16} />
-                      Clean Bucket
-                    </button>
-                  </div>
-                </div>
-
-                {/* Clear Users Database */}
-                <div className="bg-white p-4 rounded-xl border border-red-200">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h5 className="font-bold text-slate-900">Clear Users Database</h5>
-                      <p className="text-sm text-slate-600 mt-1">
-                        Reset the webapp by removing all users, events, media, and related data.
-                        Admin account will be preserved.
-                      </p>
-                    </div>
-                    <button
-                      onClick={async () => {
-                        const confirmed = confirm('🚨 CRITICAL WARNING 🚨\n\n' +
-                          'This will RESET THE ENTIRE WEBAPP!\n\n' +
-                          '• All user accounts will be deleted (except admin)\n' +
-                          '• All events and galleries will be removed\n' +
-                          '• All media files will be lost\n' +
-                          '• Support messages will be cleared\n\n' +
-                          'The webapp will return to a fresh state.\n\n' +
-                          'Type "RESET" to confirm:');
-
-                        if (confirmed) {
-                          const secondConfirm = prompt('Type "RESET" to confirm complete webapp reset:');
-                          if (secondConfirm === 'RESET') {
-                            try {
-                              const result = await api.clearUsersDatabase();
-                              alert(`✅ Database cleared successfully!\n\n` +
-                                `👤 Admin preserved: ${result.adminPreserved}\n` +
-                                `🗑️  Total records deleted: ${result.totalDeleted}\n\n` +
-                                `⚠️  Webapp has been reset to fresh state.`);
-                              // Refresh the page to reload data
-                              window.location.reload();
-                            } catch (error) {
-                              console.error('Failed to clear database:', error);
-                              alert('❌ Failed to clear database. Check console for details.');
-                            }
-                          }
-                        }
-                      }}
-                      className="px-4 py-2 bg-red-700 text-white text-sm font-bold rounded-lg hover:bg-red-800 transition-colors flex items-center gap-2 shadow-lg shadow-red-500/30"
-                    >
-                      <AlertTriangle size={16} />
-                      Clear Database
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-4 p-3 bg-red-100 border border-red-200 rounded-lg">
-                <p className="text-xs text-red-800 font-medium flex items-center gap-2">
-                  <AlertTriangle size={14} />
-                  These operations are irreversible. Use only when necessary for system maintenance or testing.
-                </p>
-              </div>
-            </div>
-
-            {/* Last Updated */}
-            {systemStorage && (
-              <div className="text-center text-xs text-slate-400">
-                Last updated: {new Date(systemStorage.timestamp).toLocaleString()}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  }
+  console.log('AdminDashboard about to render');
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
       {/* Header */}
       <header className="bg-white border-b border-slate-200 sticky top-0 z-40 px-4 md:px-8 py-4 shadow-sm">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
-          <div className="flex items-center gap-3">
-            <div className="bg-indigo-600 p-2 rounded-lg shadow-indigo-200 shadow-md">
-              <Zap className="text-white" size={24} />
-            </div>
-            <div>
-              <h1 className="text-xl font-black text-slate-900 tracking-tight">SnapifY Admin</h1>
-              <p className="text-xs text-slate-500 font-medium uppercase tracking-wide">Master Control</p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 bg-slate-100 p-1.5 rounded-xl border border-slate-200">
-            {[
-              { id: 'users', icon: Users, label: 'Users' },
-              { id: 'events', icon: Calendar, label: 'Events' },
-              { id: 'support', icon: MessageCircle, label: 'Support' },
-              { id: 'feedback', icon: MessageSquare, label: 'Feedback' },
-              { id: 'system', icon: HardDrive, label: 'System' },
-              { id: 'settings', icon: Settings, label: 'Settings' }
-            ].map(tab => (
-              <button
-                key={tab.id}
-                onClick={() => { setActiveTab(tab.id as Tab); setSelectedUserForEvents(null); }}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === tab.id
-                  ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-slate-200'
-                  : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'
-                  }`}
-              >
-                <tab.icon size={16} />
-                {tab.label}
-              </button>
-            ))}
-          </div>
-
-          <div className="flex items-center gap-3">
-            <button
-              onClick={onNewEvent}
-              className="flex items-center gap-2 bg-slate-900 text-white px-4 py-2.5 rounded-xl font-bold hover:bg-slate-800 transition-colors shadow-lg shadow-slate-500/20 text-sm"
-            >
-              <Plus size={16} />
-              <span className="hidden sm:inline">{t('newEvent')}</span>
-            </button>
-            <div className="h-8 w-px bg-slate-200 mx-1"></div>
-            <div className="relative notification-container">
-              <button
-                onClick={() => setShowNotifications(!showNotifications)}
-                className="p-2.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-colors relative"
-                title="Notifications"
-              >
-                <Bell size={20} />
-                {notifications.length > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center font-bold">
-                    {notifications.length > 9 ? '9+' : notifications.length}
-                  </span>
-                )}
-              </button>
-              {showNotifications && (
-                <div className="absolute right-0 top-full mt-2 w-80 bg-white rounded-xl shadow-xl border border-slate-200 z-50 max-h-96 overflow-y-auto notification-container">
-                  <div className="p-4 border-b border-slate-100 flex items-center justify-between">
-                    <h4 className="font-bold text-slate-900">Notifications</h4>
-                    <button
-                      onClick={() => setNotifications([])}
-                      className="text-xs text-slate-500 hover:text-slate-700"
-                    >
-                      Clear All
-                    </button>
-                  </div>
-                  {notifications.length === 0 ? (
-                    <div className="p-8 text-center text-slate-500">
-                      <Bell size={32} className="mx-auto mb-2 opacity-50" />
-                      <p className="text-sm">No notifications</p>
-                    </div>
-                  ) : (
-                    <div className="divide-y divide-slate-100">
-                      {notifications.map((notification, index) => (
-                        <div
-                          key={notification.id || index}
-                          onClick={() => {
-                            setSelectedNotification(notification);
-                            setShowUpgradeModal(true);
-                            setShowNotifications(false);
-                          }}
-                          className="p-4 hover:bg-slate-50 cursor-pointer transition-colors"
-                        >
-                          <div className="flex items-start gap-3">
-                            <div className="w-8 h-8 bg-indigo-100 rounded-full flex items-center justify-center flex-shrink-0">
-                              <Crown size={16} className="text-indigo-600" />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium text-slate-900">
-                                Upgrade Request
-                              </p>
-                              <p className="text-xs text-slate-600 mt-1">
-                                {notification.userInfo?.name || 'Anonymous user'} → {notification.tier}
-                              </p>
-                              <p className="text-xs text-slate-400 mt-1">
-                                {new Date(notification.timestamp).toLocaleString()}
-                              </p>
-                            </div>
-                            <div className="text-slate-400">
-                              <Crown size={14} />
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+          <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
+            <div className="flex items-center gap-3">
+                <div className="bg-indigo-600 p-2 rounded-lg shadow-indigo-200 shadow-md">
+                    <Zap className="text-white" size={24} />
                 </div>
-              )}
+                <div>
+                    <h1 className="text-xl font-black text-slate-900 tracking-tight">SnapifY Admin</h1>
+                    <p className="text-xs text-slate-500 font-medium uppercase tracking-wide">Master Control</p>
+                </div>
             </div>
-            <button onClick={onClose} className="p-2.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-colors" title={t('backToApp')}>
-              <LayoutGrid size={20} />
-            </button>
-            <button onClick={onLogout} className="p-2.5 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors" title={t('logOut')}>
-              <LogOut size={20} />
-            </button>
+
+            <div className="flex items-center gap-2 bg-slate-100 p-1.5 rounded-xl border border-slate-200">
+                {[
+                    { id: 'users', icon: Users, label: 'Users' },
+                    { id: 'events', icon: Calendar, label: 'Events' },
+                    { id: 'analytics', icon: BarChart, label: 'Analytics' },
+                    { id: 'settings', icon: Settings, label: 'Settings' }
+                ].map(tab => (
+                    <button
+                        key={tab.id}
+                        onClick={() => { setActiveTab(tab.id as Tab); setSelectedUserForEvents(null); }}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${
+                            activeTab === tab.id 
+                            ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-slate-200' 
+                            : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'
+                        }`}
+                    >
+                        <tab.icon size={16} />
+                        {tab.label}
+                    </button>
+                ))}
+            </div>
+
+            <div className="flex items-center gap-3">
+                <button 
+                    onClick={onNewEvent}
+                    className="flex items-center gap-2 bg-slate-900 text-white px-4 py-2.5 rounded-xl font-bold hover:bg-slate-800 transition-colors shadow-lg shadow-slate-500/20 text-sm"
+                >
+                    <Plus size={16} />
+                    <span className="hidden sm:inline">{t('newEvent')}</span>
+                </button>
+                <div className="h-8 w-px bg-slate-200 mx-1"></div>
+                <button onClick={onClose} className="p-2.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-colors" title={t('backToApp')}>
+                    <LayoutGrid size={20} />
+                </button>
+                <button onClick={onLogout} className="p-2.5 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors" title={t('logOut')}>
+                    <LogOut size={20} />
+                </button>
+            </div>
           </div>
-        </div>
       </header>
 
       <div className="flex-1 p-4 md:p-8 max-w-7xl mx-auto w-full">
-        {/* KPI Cards - Only show on main tabs */}
-        {activeTab !== 'settings' && !selectedUserForEvents && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8 animate-in slide-in-from-top-2">
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col">
-              <div className="flex items-center justify-between mb-4">
-                <span className="text-sm font-bold text-slate-500 uppercase tracking-wider">{t('totalUsers')}</span>
-                <div className="p-2 bg-indigo-50 rounded-lg text-indigo-600"><Users size={20} /></div>
-              </div>
-              <span className="text-4xl font-black text-slate-900">{users.length}</span>
-            </div>
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col">
-              <div className="flex items-center justify-between mb-4">
-                <span className="text-sm font-bold text-slate-500 uppercase tracking-wider">{t('totalEvents')}</span>
-                <div className="p-2 bg-pink-50 rounded-lg text-pink-600"><Calendar size={20} /></div>
-              </div>
-              <span className="text-4xl font-black text-slate-900">{events.length}</span>
-            </div>
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col">
-              <div className="flex items-center justify-between mb-4">
-                <span className="text-sm font-bold text-slate-500 uppercase tracking-wider">{t('storage')}</span>
-                <div className="p-2 bg-green-50 rounded-lg text-green-600"><HardDrive size={20} /></div>
-              </div>
-              <span className="text-4xl font-black text-slate-900">
-                {users.reduce((acc, curr) => acc + curr.storageUsedMb, 0).toFixed(1)} <span className="text-lg font-medium text-slate-400">MB</span>
-              </span>
-            </div>
-          </div>
-        )}
-
-        {/* Content Switcher */}
-        {activeTab === 'settings' ? renderSettings() :
-          activeTab === 'system' ? renderSystem() :
-            activeTab === 'support' ? renderSupport() :
-              activeTab === 'userEvents' ? renderUserEvents() :
-                activeTab === 'users' ? (
-                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    {/* User List */}
-                    <div className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
-                      <div className="p-6 border-b border-slate-100 flex justify-between items-center">
-                        <h3 className="text-lg font-bold text-slate-900">{t('registeredUsers')}</h3>
-                        <span className="bg-slate-100 text-slate-600 text-xs font-bold px-2.5 py-1 rounded-full">{users.length}</span>
+          {/* KPI Cards - Only show on main tabs */}
+          {activeTab !== 'settings' && !selectedUserForEvents && (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8 animate-in slide-in-from-top-2">
+                  <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col">
+                      <div className="flex items-center justify-between mb-4">
+                          <span className="text-sm font-bold text-slate-500 uppercase tracking-wider">{t('totalUsers')}</span>
+                          <div className="p-2 bg-indigo-50 rounded-lg text-indigo-600"><Users size={20} /></div>
                       </div>
-                      <div className="overflow-x-auto flex-1">
-                        <table className="w-full">
-                          <thead className="bg-slate-50 border-b border-slate-200">
-                            <tr>
-                              <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider pl-8">{t('users')}</th>
-                              <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Stats</th>
-                              <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">{t('tier')}</th>
-                              <th className="px-6 py-3 text-right text-xs font-bold text-slate-500 uppercase tracking-wider pr-8">{t('actions')}</th>
-                            </tr>
-                          </thead>
-                          <tbody className="bg-white divide-y divide-slate-100">
-                            {users.map((user) => (
-                              <tr key={user.id} className="hover:bg-slate-50 transition-colors group">
-                                <td className="px-6 py-4 pl-8 whitespace-nowrap">
-                                  <div className="flex items-center">
-                                    <div className={`flex-shrink-0 h-10 w-10 rounded-full flex items-center justify-center text-white font-bold shadow-sm ${user.role === UserRole.PHOTOGRAPHER ? 'bg-slate-900 border-2 border-amber-400' : 'bg-gradient-to-br from-indigo-500 to-purple-600'}`}>
-                                      {user.role === UserRole.PHOTOGRAPHER ? <Camera size={16} className="text-amber-400" /> : user.name.charAt(0).toUpperCase()}
-                                    </div>
-                                    <div className="ml-4">
-                                      <div className="text-sm font-bold text-slate-900 flex flex-wrap items-center gap-2">
-                                        {user.name}
-                                        {user.role === UserRole.ADMIN && <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700 border border-red-200 uppercase tracking-wide">ADMIN</span>}
-                                      </div>
-                                      <div className="text-xs text-slate-500">{user.email}</div>
-                                    </div>
-                                  </div>
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap">
-                                  <div className="flex flex-col gap-1">
-                                    <span className="text-xs font-medium text-slate-700">{getUserEventCount(user.id)} Events</span>
-                                    <div className="w-24 bg-slate-200 rounded-full h-1.5">
-                                      <div className="bg-indigo-500 h-1.5 rounded-full" style={{ width: `${Math.min((user.storageUsedMb / user.storageLimitMb) * 100, 100)}%` }}></div>
-                                    </div>
-                                  </div>
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap">
-                                  {renderTierBadge(user.tier)}
-                                </td>
-                                <td className="px-6 py-4 pr-8 whitespace-nowrap text-right text-sm font-medium">
-                                  {user.role !== UserRole.ADMIN && (
-                                    <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                      <button onClick={() => viewUserEvents(user)} className="text-slate-500 hover:text-indigo-600 p-2 hover:bg-indigo-50 rounded-lg transition-colors" title="View Events"><Eye size={16} /></button>
-                                      <button onClick={() => openEditUserModal(user)} className="text-slate-500 hover:text-blue-600 p-2 hover:bg-blue-50 rounded-lg transition-colors" title="Edit User"><Edit size={16} /></button>
-                                      <button onClick={() => promptDeleteUser(user)} className="text-slate-500 hover:text-red-600 p-2 hover:bg-red-50 rounded-lg transition-colors" title="Delete User"><Trash2 size={16} /></button>
-                                    </div>
-                                  )}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-
-                    {/* Storage Chart */}
-                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col">
-                      <h3 className="text-lg font-bold text-slate-900 mb-6">{t('storageUsage')}</h3>
-                      <div className="flex-1 min-h-[300px]">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={storageData} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                            <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" />
-                            <XAxis type="number" hide />
-                            <YAxis dataKey="name" type="category" width={80} tick={{ fontSize: 12 }} />
-                            <Tooltip
-                              cursor={{ fill: '#f8fafc' }}
-                              contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
-                            />
-                            <Bar dataKey="used" fill="#6366f1" radius={[0, 4, 4, 0]} barSize={20} name="Used (MB)" />
-                          </BarChart>
-                        </ResponsiveContainer>
-                      </div>
-                    </div>
+                      <span className="text-4xl font-black text-slate-900">{users.length}</span>
                   </div>
-                ) : (
-                  <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                    <div className="p-6 border-b border-slate-100 flex justify-between items-center">
-                      <h3 className="text-lg font-bold text-slate-900">{t('systemEvents')}</h3>
-                      <span className="bg-slate-100 text-slate-600 text-xs font-bold px-2.5 py-1 rounded-full">{events.length}</span>
-                    </div>
-                    <div className="overflow-x-auto">
-                      <table className="w-full">
+                  <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col">
+                      <div className="flex items-center justify-between mb-4">
+                          <span className="text-sm font-bold text-slate-500 uppercase tracking-wider">{t('totalEvents')}</span>
+                          <div className="p-2 bg-pink-50 rounded-lg text-pink-600"><Calendar size={20} /></div>
+                      </div>
+                      <span className="text-4xl font-black text-slate-900">{events.length}</span>
+                  </div>
+                  <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col">
+                      <div className="flex items-center justify-between mb-4">
+                          <span className="text-sm font-bold text-slate-500 uppercase tracking-wider">{t('storage')}</span>
+                          <div className="p-2 bg-green-50 rounded-lg text-green-600"><HardDrive size={20} /></div>
+                      </div>
+                      <span className="text-4xl font-black text-slate-900">
+                          {users.reduce((acc, curr) => acc + curr.storageUsedMb, 0).toFixed(1)} <span className="text-lg font-medium text-slate-400">MB</span>
+                      </span>
+                  </div>
+              </div>
+          )}
+
+          {/* Content Switcher */}
+           {activeTab === 'analytics' ? renderAnalytics() :
+            activeTab === 'settings' ? renderSettings() :
+            activeTab === 'userEvents' ? renderUserEvents() :
+            activeTab === 'users' ? (
+             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                 {/* User List */}
+                 <div className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+                     <div className="p-6 border-b border-slate-100 flex justify-between items-center">
+                         <h3 className="text-lg font-bold text-slate-900">{t('registeredUsers')}</h3>
+                         <span className="bg-slate-100 text-slate-600 text-xs font-bold px-2.5 py-1 rounded-full">{users.length}</span>
+                     </div>
+
+                     {/* Bulk Operations Bar */}
+                     {selectedUsers.size > 0 && (
+                         <div className="px-6 py-3 bg-indigo-50 border-b border-indigo-100 flex items-center justify-between">
+                             <span className="text-sm font-medium text-indigo-900">
+                                 {selectedUsers.size} user{selectedUsers.size > 1 ? 's' : ''} selected
+                             </span>
+                             <div className="flex items-center gap-2">
+                                 <select
+                                     value={bulkOperation || ''}
+                                     onChange={(e) => setBulkOperation(e.target.value as 'delete' | 'changeTier')}
+                                     className="px-3 py-1 text-sm border border-indigo-200 rounded-lg bg-white"
+                                 >
+                                     <option value="">Choose action...</option>
+                                     <option value="changeTier">Change Tier</option>
+                                     <option value="delete">Delete Users</option>
+                                 </select>
+
+                                 {bulkOperation === 'changeTier' && (
+                                     <select
+                                         value={bulkTierChange}
+                                         onChange={(e) => setBulkTierChange(e.target.value as TierLevel)}
+                                         className="px-3 py-1 text-sm border border-indigo-200 rounded-lg bg-white"
+                                     >
+                                         {Object.values(TierLevel).map(tier => (
+                                             <option key={tier} value={tier}>{tier}</option>
+                                         ))}
+                                     </select>
+                                 )}
+
+                                 <button
+                                     onClick={executeBulkOperation}
+                                     disabled={isBulkProcessing}
+                                     className="px-4 py-1 bg-indigo-600 text-white text-sm font-bold rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2"
+                                 >
+                                     {isBulkProcessing ? <RefreshCw size={14} className="animate-spin" /> : null}
+                                     Execute
+                                 </button>
+                             </div>
+                         </div>
+                     )}
+                    <div className="overflow-x-auto flex-1">
+                        <table className="w-full">
                         <thead className="bg-slate-50 border-b border-slate-200">
-                          <tr>
-                            <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider pl-8">{t('event')}</th>
-                            <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">{t('host')}</th>
-                            <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">{t('status')}</th>
-                            <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">{t('mediaCount')}</th>
-                            <th className="px-6 py-3 text-right text-xs font-bold text-slate-500 uppercase tracking-wider pr-8">{t('actions')}</th>
-                          </tr>
+                            <tr>
+                            <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">
+                                <input
+                                    type="checkbox"
+                                    checked={selectedUsers.size === users.length && users.length > 0}
+                                    onChange={selectAllUsers}
+                                    className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                />
+                            </th>
+                            <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">{t('users')}</th>
+                            <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Stats</th>
+                            <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">{t('tier')}</th>
+                            <th className="px-6 py-3 text-right text-xs font-bold text-slate-500 uppercase tracking-wider">{t('actions')}</th>
+                            </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-slate-100">
-                          {events.map((evt) => (
-                            <tr key={evt.id} className="hover:bg-slate-50 transition-colors group">
-                              <td className="px-6 py-4 pl-8 whitespace-nowrap">
-                                <div>
-                                  <div className="text-sm font-bold text-slate-900 flex items-center gap-1">
+                            {users.map((user) => (
+                            <tr key={user.id} className="hover:bg-slate-50 transition-colors group">
+                                <td className="px-6 py-4 whitespace-nowrap">
+                                    <input
+                                        type="checkbox"
+                                        checked={selectedUsers.has(user.id)}
+                                        onChange={() => toggleUserSelection(user.id)}
+                                        className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                    />
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap">
+                                <div className="flex items-center">
+                                    <div className={`flex-shrink-0 h-10 w-10 rounded-full flex items-center justify-center text-white font-bold shadow-sm ${user.role === UserRole.PHOTOGRAPHER ? 'bg-slate-900 border-2 border-amber-400' : 'bg-gradient-to-br from-indigo-500 to-purple-600'}`}>
+                                        {user.role === UserRole.PHOTOGRAPHER ? <Camera size={16} className="text-amber-400"/> : user.name.charAt(0).toUpperCase()}
+                                    </div>
+                                    <div className="ml-4">
+                                    <div className="text-sm font-bold text-slate-900 flex flex-wrap items-center gap-2">
+                                        {user.name}
+                                        {user.role === UserRole.ADMIN && <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700 border border-red-200 uppercase tracking-wide">ADMIN</span>}
+                                    </div>
+                                    <div className="text-xs text-slate-500">{user.email}</div>
+                                    </div>
+                                </div>
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap">
+                                    <div className="flex flex-col gap-1">
+                                        <span className="text-xs font-medium text-slate-700">{getUserEventCount(user.id)} Events</span>
+                                        <div className="w-24 bg-slate-200 rounded-full h-1.5">
+                                            <div className="bg-indigo-500 h-1.5 rounded-full" style={{ width: `${Math.min((user.storageUsedMb / user.storageLimitMb) * 100, 100)}%` }}></div>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap">
+                                    {renderTierBadge(user.tier)}
+                                </td>
+                                <td className="px-6 py-4 pr-8 whitespace-nowrap text-right text-sm font-medium">
+                                {user.role !== UserRole.ADMIN && (
+                                    <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <button onClick={() => viewUserEvents(user)} className="text-slate-500 hover:text-indigo-600 p-2 hover:bg-indigo-50 rounded-lg transition-colors" title="View Events"><Eye size={16} /></button>
+                                        <button onClick={() => openEditUserModal(user)} className="text-slate-500 hover:text-blue-600 p-2 hover:bg-blue-50 rounded-lg transition-colors" title="Edit User"><Edit size={16} /></button>
+                                        <button onClick={() => promptDeleteUser(user)} className="text-slate-500 hover:text-red-600 p-2 hover:bg-red-50 rounded-lg transition-colors" title="Delete User"><Trash2 size={16} /></button>
+                                    </div>
+                                )}
+                                </td>
+                            </tr>
+                            ))}
+                        </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                {/* Storage Chart */}
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col">
+                    <h3 className="text-lg font-bold text-slate-900 mb-6">{t('storageUsage')}</h3>
+                    <div className="flex-1 min-h-[300px]">
+                        {storageData.length > 0 ? (
+                            <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={storageData} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" />
+                                    <XAxis type="number" hide />
+                                    <YAxis dataKey="name" type="category" width={80} tick={{fontSize: 12}} />
+                                    <Tooltip
+                                        cursor={{fill: '#f8fafc'}}
+                                        contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                                    />
+                                    <Bar dataKey="used" fill="#6366f1" radius={[0, 4, 4, 0]} barSize={20} name="Used (MB)" />
+                                </BarChart>
+                            </ResponsiveContainer>
+                        ) : (
+                            <div className="flex items-center justify-center h-full text-slate-500">
+                                <div className="text-center">
+                                    <HardDrive size={48} className="mx-auto mb-4 text-slate-300" />
+                                    <p className="font-medium">No storage data available</p>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </div>
+          ) : (
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                <div className="p-6 border-b border-slate-100 flex justify-between items-center">
+                    <h3 className="text-lg font-bold text-slate-900">{t('systemEvents')}</h3>
+                    <span className="bg-slate-100 text-slate-600 text-xs font-bold px-2.5 py-1 rounded-full">{events.length}</span>
+                </div>
+                <div className="overflow-x-auto">
+                    <table className="w-full">
+                    <thead className="bg-slate-50 border-b border-slate-200">
+                        <tr>
+                        <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider pl-8">{t('event')}</th>
+                        <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">{t('host')}</th>
+                        <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">{t('status')}</th>
+                        <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">{t('mediaCount')}</th>
+                        <th className="px-6 py-3 text-right text-xs font-bold text-slate-500 uppercase tracking-wider pr-8">{t('actions')}</th>
+                        </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-slate-100">
+                        {events.map((evt) => (
+                        <tr key={evt.id} className="hover:bg-slate-50 transition-colors group">
+                            <td className="px-6 py-4 pl-8 whitespace-nowrap">
+                            <div>
+                                <div className="text-sm font-bold text-slate-900 flex items-center gap-1">
                                     {evt.title}
                                     {evt.pin && <Lock size={12} className="text-amber-500" />}
-                                  </div>
-                                  <div className="text-xs text-slate-500 flex items-center gap-1 mt-1"><Calendar size={12} /> {evt.date || t('noDate')}</div>
                                 </div>
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap">
+                                <div className="text-xs text-slate-500 flex items-center gap-1 mt-1"><Calendar size={12} /> {evt.date || t('noDate')}</div>
+                            </div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
                                 <div className="text-sm font-medium text-slate-700 flex items-center gap-1.5">
-                                  <div className="w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center text-xs font-bold text-slate-600">
-                                    {getEventHostName(evt.hostId).charAt(0)}
-                                  </div>
-                                  {getEventHostName(evt.hostId)}
-                                  {users.find(u => u.id === evt.hostId)?.role === UserRole.PHOTOGRAPHER && <Briefcase size={12} className="text-amber-500" />}
+                                    <div className="w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center text-xs font-bold text-slate-600">
+                                        {getEventHostName(evt.hostId).charAt(0)}
+                                    </div>
+                                    {getEventHostName(evt.hostId)}
+                                    {users.find(u => u.id === evt.hostId)?.role === UserRole.PHOTOGRAPHER && <Briefcase size={12} className="text-amber-500" />}
                                 </div>
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap">
-                                {isExpired(evt.expiresAt) ?
-                                  <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-700 flex items-center w-fit border border-red-200"><Clock size={12} className="mr-1" /> {t('expired')}</span> :
-                                  <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-green-100 text-green-700 flex items-center w-fit border border-green-200"><Zap size={12} className="mr-1" /> {t('active')}</span>
-                                }
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-700 font-bold">{evt.media.length}</td>
-                              <td className="px-6 py-4 pr-8 whitespace-nowrap text-right text-sm font-medium">
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                            {isExpired(evt.expiresAt) ? 
+                                <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-700 flex items-center w-fit border border-red-200"><Clock size={12} className="mr-1" /> {t('expired')}</span> : 
+                                <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-green-100 text-green-700 flex items-center w-fit border border-green-200"><Zap size={12} className="mr-1" /> {t('active')}</span>
+                            }
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-700 font-bold">{evt.media.length}</td>
+                            <td className="px-6 py-4 pr-8 whitespace-nowrap text-right text-sm font-medium">
                                 <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                  <button onClick={() => onDownloadEvent(evt)} className="text-slate-500 hover:text-green-600 p-2 hover:bg-green-50 rounded-lg transition-colors" title={t('downloadAll')}><Download size={16} /></button>
-                                  <button onClick={() => openEditModal(evt)} className="text-slate-500 hover:text-blue-600 p-2 hover:bg-blue-50 rounded-lg transition-colors" title="Edit Event"><Edit size={16} /></button>
-                                  <button onClick={() => setSelectedEvent(evt)} className="text-slate-500 hover:text-indigo-600 p-2 hover:bg-indigo-50 rounded-lg transition-colors" title="View Media"><Eye size={16} /></button>
-                                  <button onClick={() => promptDeleteEvent(evt)} className="text-slate-500 hover:text-red-600 p-2 hover:bg-red-50 rounded-lg transition-colors" title="Delete Event"><Trash2 size={16} /></button>
+                                    <button onClick={() => onDownloadEvent(evt)} className="text-slate-500 hover:text-green-600 p-2 hover:bg-green-50 rounded-lg transition-colors" title={t('downloadAll')}><Download size={16} /></button>
+                                    <button onClick={() => openEditModal(evt)} className="text-slate-500 hover:text-blue-600 p-2 hover:bg-blue-50 rounded-lg transition-colors" title="Edit Event"><Edit size={16} /></button>
+                                    <button onClick={() => setSelectedEvent(evt)} className="text-slate-500 hover:text-indigo-600 p-2 hover:bg-indigo-50 rounded-lg transition-colors" title="View Media"><Eye size={16} /></button>
+                                    <button onClick={() => promptDeleteEvent(evt)} className="text-slate-500 hover:text-red-600 p-2 hover:bg-red-50 rounded-lg transition-colors" title="Delete Event"><Trash2 size={16} /></button>
                                 </div>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
+                            </td>
+                        </tr>
+                        ))}
+                    </tbody>
+                    </table>
+                </div>
+            </div>
+          )}
       </div>
 
       {/* Edit User Modal */}
       {editingUser && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden scale-100">
-            <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-              <h3 className="text-xl font-black text-slate-900">Edit User Profile</h3>
-              <button onClick={() => setEditingUser(null)} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><X size={20} /></button>
-            </div>
-            <div className="p-6 space-y-5">
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Display Name</label>
-                  <input id="edit-user-name-input" name="edit-user-name" type="text" value={editUserName} onChange={(e) => setEditUserName(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-900 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 outline-none transition-all font-medium" autoComplete="name" />
+            <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden scale-100">
+                <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                    <h3 className="text-xl font-black text-slate-900">Edit User Profile</h3>
+                    <button onClick={() => setEditingUser(null)} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><X size={20} /></button>
                 </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Email Address</label>
-                  <div className="flex items-center px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-500">
-                    <Mail size={18} className="mr-3 text-slate-400" />
-                    <input id="edit-user-email-input" name="edit-user-email" type="text" value={editUserEmail} onChange={(e) => setEditUserEmail(e.target.value)} className="bg-transparent w-full focus:outline-none font-medium" autoComplete="email" />
-                  </div>
-                </div>
-                {TIER_CONFIG[selectedTier].allowBranding && (
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Studio / Business</label>
-                    <div className="flex items-center px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-900">
-                      <Building size={18} className="mr-3 text-slate-400" />
-                      <input id="edit-user-studio-input" name="edit-user-studio" type="text" value={editUserStudio} onChange={(e) => setEditUserStudio(e.target.value)} className="bg-transparent w-full focus:outline-none font-medium" placeholder="No studio name" autoComplete="organization" />
+                <div className="p-6 space-y-5">
+                    <div className="space-y-4">
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Display Name</label>
+                            <input type="text" value={editUserName} onChange={(e) => setEditUserName(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-900 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 outline-none transition-all font-medium" />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Email Address</label>
+                            <div className="flex items-center px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-500">
+                                <Mail size={18} className="mr-3 text-slate-400" />
+                                <input type="text" value={editUserEmail} onChange={(e) => setEditUserEmail(e.target.value)} className="bg-transparent w-full focus:outline-none font-medium" />
+                            </div>
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Studio / Business</label>
+                            <div className="flex items-center px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-900">
+                                <Building size={18} className="mr-3 text-slate-400" />
+                                <input type="text" value={editUserStudio} onChange={(e) => setEditUserStudio(e.target.value)} className="bg-transparent w-full focus:outline-none font-medium" placeholder="No studio name" />
+                            </div>
+                        </div>
                     </div>
-                  </div>
-                )}
-              </div>
 
-              <div className="grid grid-cols-2 gap-4 pt-2">
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">System Role</label>
-                  <select value={selectedRole} onChange={(e) => setSelectedRole(e.target.value as UserRole)} className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none font-medium cursor-pointer">
-                    {Object.values(UserRole).map(role => (<option key={role} value={role}>{role}</option>))}
-                  </select>
+                    <div className="grid grid-cols-2 gap-4 pt-2">
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">System Role</label>
+                            <select value={selectedRole} onChange={(e) => setSelectedRole(e.target.value as UserRole)} className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none font-medium cursor-pointer">
+                                {Object.values(UserRole).map(role => (<option key={role} value={role}>{role}</option>))}
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Tier Plan</label>
+                            <select value={selectedTier} onChange={(e) => setSelectedTier(e.target.value as TierLevel)} className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none font-medium cursor-pointer">
+                                {Object.values(TierLevel).map(tier => (<option key={tier} value={tier}>{tier}</option>))}
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <button onClick={handleSaveUserEdit} className="w-full py-4 bg-black text-white rounded-xl font-bold hover:bg-slate-800 transition-all shadow-lg shadow-slate-200 flex items-center justify-center gap-2 mt-4">
+                        <Save size={18} />
+                        Save Changes
+                    </button>
                 </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Tier Plan</label>
-                  <select value={selectedTier} onChange={(e) => setSelectedTier(e.target.value as TierLevel)} className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none font-medium cursor-pointer">
-                    {Object.values(TierLevel).map(tier => (<option key={tier} value={tier}>{tier}</option>))}
-                  </select>
-                </div>
-              </div>
-
-              <button onClick={handleSaveUserEdit} className="w-full py-4 bg-black text-white rounded-xl font-bold hover:bg-slate-800 transition-all shadow-lg shadow-slate-200 flex items-center justify-center gap-2 mt-4">
-                <Save size={18} />
-                Save Changes
-              </button>
             </div>
-          </div>
         </div>
       )}
-
+      
       {/* Edit Event Modal */}
       {editingEvent && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden">
-            <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-              <h3 className="text-xl font-black text-slate-900">{t('editEvent')}</h3>
-              <button onClick={() => setEditingEvent(null)} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><X size={20} /></button>
-            </div>
-            <div className="p-6 space-y-5">
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">{t('eventTitle')}</label>
-                <input id="edit-event-title-input" name="edit-event-title" type="text" value={editTitle} onChange={(e) => setEditTitle(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-900 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 outline-none transition-all font-medium" autoComplete="off" />
-              </div>
-              <div className="bg-amber-50 p-4 rounded-xl border border-amber-100">
-                <label className="block text-xs font-bold text-amber-800 uppercase tracking-wider mb-3 flex items-center"><Clock size={16} className="mr-2" /> {t('modifyExpiration')}</label>
-                <div className="space-y-2 mb-4">
-                  <label className="flex items-center p-3 bg-white rounded-xl border border-amber-100 cursor-pointer hover:border-amber-300 transition-all">
-                    <input type="radio" name="expiryType" checked={editExpiryType === 'unlimited'} onChange={() => setEditExpiryType('unlimited')} className="w-4 h-4 text-amber-600 border-slate-300 focus:ring-amber-500" />
-                    <span className="ml-3 text-sm font-bold text-slate-900">{t('unlimited')}</span>
-                    <span className="ml-auto text-xs text-amber-600 font-medium">{t('neverExpires')}</span>
-                  </label>
-                  <label className="flex items-center p-3 bg-white rounded-xl border border-amber-100 cursor-pointer hover:border-amber-300 transition-all">
-                    <input type="radio" name="expiryType" checked={editExpiryType === 'immediate'} onChange={() => setEditExpiryType('immediate')} className="w-4 h-4 text-amber-600 border-slate-300 focus:ring-amber-500" />
-                    <span className="ml-3 text-sm font-bold text-slate-900">{t('expireImmediately')}</span>
-                  </label>
-                  <label className="flex items-center p-3 bg-white rounded-xl border border-amber-100 cursor-pointer hover:border-amber-300 transition-all">
-                    <input type="radio" name="expiryType" checked={editExpiryType === 'custom'} onChange={() => setEditExpiryType('custom')} className="w-4 h-4 text-amber-600 border-slate-300 focus:ring-amber-500" />
-                    <span className="ml-3 text-sm font-bold text-slate-900">{t('setNewDuration')}</span>
-                  </label>
-                </div>
-                {editExpiryType === 'custom' && (
-                  <div className="flex gap-2 animate-in fade-in slide-in-from-top-2">
-                    <input id="edit-duration-value-input" name="edit-duration-value" type="number" min="1" value={editDurationVal} onChange={(e) => setEditDurationVal(parseInt(e.target.value) || 0)} className="w-1/3 px-4 py-3 border border-amber-200 rounded-xl text-sm font-bold text-slate-900 focus:ring-2 focus:ring-amber-500 outline-none" autoComplete="off" />
-                    <select value={editDurationUnit} onChange={(e) => setEditDurationUnit(e.target.value as any)} className="flex-1 px-4 py-3 border border-amber-200 rounded-xl text-sm font-bold text-slate-900 focus:ring-2 focus:ring-amber-500 outline-none bg-white cursor-pointer">
-                      <option value="seconds">{t('seconds')}</option><option value="minutes">{t('minutes')}</option><option value="hours">{t('hours')}</option><option value="days">{t('days')}</option>
-                    </select>
+          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
+              <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden">
+                  <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                      <h3 className="text-xl font-black text-slate-900">{t('editEvent')}</h3>
+                      <button onClick={() => setEditingEvent(null)} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><X size={20} /></button>
                   </div>
-                )}
+                  <div className="p-6 space-y-5">
+                      <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">{t('eventTitle')}</label>
+                          <input type="text" value={editTitle} onChange={(e) => setEditTitle(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-900 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 outline-none transition-all font-medium" />
+                      </div>
+                      <div className="bg-amber-50 p-4 rounded-xl border border-amber-100">
+                          <label className="block text-xs font-bold text-amber-800 uppercase tracking-wider mb-3 flex items-center"><Clock size={16} className="mr-2"/> {t('modifyExpiration')}</label>
+                          <div className="space-y-2 mb-4">
+                              <label className="flex items-center p-3 bg-white rounded-xl border border-amber-100 cursor-pointer hover:border-amber-300 transition-all">
+                                  <input type="radio" name="expiryType" checked={editExpiryType === 'unlimited'} onChange={() => setEditExpiryType('unlimited')} className="w-4 h-4 text-amber-600 border-slate-300 focus:ring-amber-500" />
+                                  <span className="ml-3 text-sm font-bold text-slate-900">{t('unlimited')}</span>
+                                  <span className="ml-auto text-xs text-amber-600 font-medium">{t('neverExpires')}</span>
+                              </label>
+                              <label className="flex items-center p-3 bg-white rounded-xl border border-amber-100 cursor-pointer hover:border-amber-300 transition-all">
+                                  <input type="radio" name="expiryType" checked={editExpiryType === 'immediate'} onChange={() => setEditExpiryType('immediate')} className="w-4 h-4 text-amber-600 border-slate-300 focus:ring-amber-500" />
+                                  <span className="ml-3 text-sm font-bold text-slate-900">{t('expireImmediately')}</span>
+                              </label>
+                              <label className="flex items-center p-3 bg-white rounded-xl border border-amber-100 cursor-pointer hover:border-amber-300 transition-all">
+                                  <input type="radio" name="expiryType" checked={editExpiryType === 'custom'} onChange={() => setEditExpiryType('custom')} className="w-4 h-4 text-amber-600 border-slate-300 focus:ring-amber-500" />
+                                  <span className="ml-3 text-sm font-bold text-slate-900">{t('setNewDuration')}</span>
+                              </label>
+                          </div>
+                          {editExpiryType === 'custom' && (
+                              <div className="flex gap-2 animate-in fade-in slide-in-from-top-2">
+                                  <input type="number" min="1" value={editDurationVal} onChange={(e) => setEditDurationVal(parseInt(e.target.value) || 0)} className="w-1/3 px-4 py-3 border border-amber-200 rounded-xl text-sm font-bold text-slate-900 focus:ring-2 focus:ring-amber-500 outline-none" />
+                                  <select value={editDurationUnit} onChange={(e) => setEditDurationUnit(e.target.value as any)} className="flex-1 px-4 py-3 border border-amber-200 rounded-xl text-sm font-bold text-slate-900 focus:ring-2 focus:ring-amber-500 outline-none bg-white cursor-pointer">
+                                      <option value="seconds">{t('seconds')}</option><option value="minutes">{t('minutes')}</option><option value="hours">{t('hours')}</option><option value="days">{t('days')}</option>
+                                  </select>
+                              </div>
+                          )}
+                      </div>
+                      <button onClick={handleSaveEventEdit} className="w-full py-4 bg-black text-white rounded-xl font-bold hover:bg-slate-800 transition-all flex items-center justify-center gap-2"><Save size={18} />{t('saveChanges')}</button>
+                  </div>
               </div>
-              <button onClick={handleSaveEventEdit} className="w-full py-4 bg-black text-white rounded-xl font-bold hover:bg-slate-800 transition-all flex items-center justify-center gap-2"><Save size={18} />{t('saveChanges')}</button>
-            </div>
           </div>
-        </div>
       )}
 
       {/* Media Inspector */}
       {selectedEvent && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-white w-full max-w-6xl h-[90vh] rounded-3xl shadow-2xl flex flex-col overflow-hidden">
-            <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-              <div>
-                <h3 className="text-xl font-black text-slate-900">{t('managing')}: {selectedEvent.title}</h3>
-                <p className="text-sm text-slate-500 font-medium mt-1">{selectedEvent.media.length} {t('mediaItems')} • {t('totalMedia')}</p>
-              </div>
-              <button onClick={() => setSelectedEvent(null)} className="p-2 hover:bg-slate-200 rounded-full transition-colors"><X size={24} /></button>
-            </div>
-            <div className="flex-1 overflow-y-auto p-6 bg-slate-50">
-              {selectedEvent.media.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full text-slate-400"><ImageIcon size={64} className="mb-4 opacity-50" /><p className="font-bold text-lg">{t('noMedia')}</p></div>
-              ) : (
-                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                  {selectedEvent.media.map((item) => (
-                    <div key={item.id} className="relative group aspect-square bg-slate-200 rounded-xl overflow-hidden shadow-sm hover:shadow-lg transition-all cursor-pointer border border-slate-200" onClick={() => setPreviewMedia(item)}>
-                      {item.type === 'video' ? <video src={item.previewUrl || item.url} className="w-full h-full object-cover" muted /> : <img src={item.url} alt="content" className="w-full h-full object-cover" />}
-                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 backdrop-blur-[2px]">
-                        <div className="bg-white/20 p-2 rounded-full backdrop-blur-md text-white hover:bg-white/40 transition-colors"><ZoomIn size={20} /></div>
-                        <button onClick={(e) => { e.stopPropagation(); promptDeleteMedia(selectedEvent.id, item.id); }} className="bg-red-600 text-white p-2 rounded-full hover:bg-red-700 transform hover:scale-110 transition-all shadow-lg"><Trash2 size={20} /></button>
-                      </div>
-                      <div className="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/80 via-black/50 to-transparent"><p className="text-white text-xs font-medium truncate">{item.uploaderName}</p></div>
+            <div className="bg-white w-full max-w-6xl h-[90vh] rounded-3xl shadow-2xl flex flex-col overflow-hidden">
+                <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                    <div>
+                        <h3 className="text-xl font-black text-slate-900">{t('managing')}: {selectedEvent.title}</h3>
+                        <p className="text-sm text-slate-500 font-medium mt-1">{selectedEvent.media.length} {t('mediaItems')} • {t('totalMedia')}</p>
                     </div>
-                  ))}
+                    <button onClick={() => setSelectedEvent(null)} className="p-2 hover:bg-slate-200 rounded-full transition-colors"><X size={24} /></button>
                 </div>
-              )}
+                <div className="flex-1 overflow-y-auto p-6 bg-slate-50">
+                    {selectedEvent.media.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center h-full text-slate-400"><ImageIcon size={64} className="mb-4 opacity-50" /><p className="font-bold text-lg">{t('noMedia')}</p></div>
+                    ) : (
+                        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                            {selectedEvent.media.map((item) => (
+                                <div key={item.id} className="relative group aspect-square bg-slate-200 rounded-xl overflow-hidden shadow-sm hover:shadow-lg transition-all cursor-pointer border border-slate-200" onClick={() => setPreviewMedia(item)}>
+                                    {item.type === 'video' ? <video src={item.previewUrl || item.url} className="w-full h-full object-cover" muted /> : <img src={item.url} alt="content" className="w-full h-full object-cover" />}
+                                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 backdrop-blur-[2px]">
+                                         <div className="bg-white/20 p-2 rounded-full backdrop-blur-md text-white hover:bg-white/40 transition-colors"><ZoomIn size={20} /></div>
+                                        <button onClick={(e) => { e.stopPropagation(); promptDeleteMedia(selectedEvent.id, item.id); }} className="bg-red-600 text-white p-2 rounded-full hover:bg-red-700 transform hover:scale-110 transition-all shadow-lg"><Trash2 size={20} /></button>
+                                    </div>
+                                    <div className="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/80 via-black/50 to-transparent"><p className="text-white text-xs font-medium truncate">{item.uploaderName}</p></div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
             </div>
-          </div>
         </div>
       )}
 
       {/* Media Preview */}
       {previewMedia && (
         <div className="fixed inset-0 z-[70] bg-black/95 backdrop-blur-xl flex items-center justify-center p-4 animate-in fade-in duration-200" onClick={() => setPreviewMedia(null)}>
-          <button className="absolute top-6 right-6 text-white/70 hover:text-white p-3 bg-white/10 hover:bg-white/20 rounded-full transition-all z-50" onClick={() => setPreviewMedia(null)}><X size={32} /></button>
-          <div className="max-w-full max-h-full overflow-hidden flex items-center justify-center relative w-full h-full" onClick={(e) => e.stopPropagation()}>
-            {previewMedia.type === 'video' ? <video src={previewMedia.url} controls autoPlay className="max-w-full max-h-[90vh] rounded-2xl shadow-2xl ring-1 ring-white/10" /> : <img src={previewMedia.url} alt="preview" className="max-w-full max-h-[90vh] object-contain rounded-2xl shadow-2xl ring-1 ring-white/10" />}
-          </div>
-          <div className="absolute bottom-10 left-0 right-0 text-center text-white pointer-events-none">
-            <p className="font-black text-xl drop-shadow-lg mb-1">{previewMedia.caption || 'No caption'}</p>
-            <div className="flex items-center justify-center gap-2 text-sm text-white/60 font-medium">
-              <Camera size={14} />
-              <span>Uploaded by {previewMedia.uploaderName}</span>
-              <span>•</span>
-              <span>{new Date(previewMedia.uploadedAt).toLocaleDateString()}</span>
+            <button className="absolute top-6 right-6 text-white/70 hover:text-white p-3 bg-white/10 hover:bg-white/20 rounded-full transition-all z-50" onClick={() => setPreviewMedia(null)}><X size={32} /></button>
+            <div className="max-w-full max-h-full overflow-hidden flex items-center justify-center relative w-full h-full" onClick={(e) => e.stopPropagation()}>
+                {previewMedia.type === 'video' ? <video src={previewMedia.url} controls autoPlay className="max-w-full max-h-[90vh] rounded-2xl shadow-2xl ring-1 ring-white/10" /> : <img src={previewMedia.url} alt="preview" className="max-w-full max-h-[90vh] object-contain rounded-2xl shadow-2xl ring-1 ring-white/10" />}
             </div>
-          </div>
+            <div className="absolute bottom-10 left-0 right-0 text-center text-white pointer-events-none">
+                <p className="font-black text-xl drop-shadow-lg mb-1">{previewMedia.caption || 'No caption'}</p>
+                <div className="flex items-center justify-center gap-2 text-sm text-white/60 font-medium">
+                    <Camera size={14} />
+                    <span>Uploaded by {previewMedia.uploaderName}</span>
+                    <span>•</span>
+                    <span>{new Date(previewMedia.uploadedAt).toLocaleDateString()}</span>
+                </div>
+            </div>
         </div>
       )}
 
@@ -1453,339 +1288,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         <div className="fixed inset-0 z-[80] bg-black/60 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
           <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden p-8 animate-in zoom-in-95">
             <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mb-6 mx-auto border border-red-100">
-              {deleteConfirmation.type === 'system' ? <ShieldAlert className="text-red-600" size={32} /> : <AlertTriangle className="text-red-600" size={32} />}
+                {deleteConfirmation.type === 'system' ? <ShieldAlert className="text-red-600" size={32} /> : <AlertTriangle className="text-red-600" size={32} />}
             </div>
             <h3 className="text-2xl font-black text-slate-900 text-center mb-3">{deleteConfirmation.title}</h3>
             <p className="text-slate-500 text-center mb-8 text-sm leading-relaxed font-medium">{deleteConfirmation.message}</p>
             <div className="flex gap-3">
               <button onClick={() => setDeleteConfirmation(null)} className="flex-1 py-3.5 bg-slate-100 text-slate-700 font-bold rounded-xl hover:bg-slate-200 transition-colors">Cancel</button>
               <button onClick={executeDelete} className="flex-1 py-3.5 bg-red-600 text-white font-bold rounded-xl hover:bg-red-700 transition-colors flex items-center justify-center gap-2 shadow-lg shadow-red-500/20">
-                <Trash2 size={18} />
-                Delete
+                  {isResetting ? <span className="animate-spin border-2 border-white/30 border-t-white rounded-full w-5 h-5"></span> : <Trash2 size={18} />}
+                  {deleteConfirmation.type === 'system' ? 'CONFIRM RESET' : 'Delete'}
               </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* User Upgrade Modal */}
-      {showUpgradeModal && selectedNotification && (
-        <div className="fixed inset-0 z-[80] bg-black/60 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden p-6 animate-in zoom-in-95">
-            <div className="text-center mb-6">
-              <div className="w-16 h-16 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Crown size={32} />
-              </div>
-              <h3 className="text-2xl font-bold text-slate-900">Upgrade User</h3>
-              <p className="text-slate-500 mt-2">
-                Confirm upgrade for this user
-              </p>
-            </div>
-
-            <div className="space-y-4 mb-6">
-              <div className="bg-slate-50 p-4 rounded-xl">
-                <div className="space-y-3">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Full Name</label>
-                    <p className="text-slate-900 font-medium">{selectedNotification.userInfo?.name || 'Anonymous User'}</p>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Email Address</label>
-                    <p className="text-slate-900 font-medium">{selectedNotification.userInfo?.email || 'Not provided'}</p>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Requested Tier</label>
-                    <p className="text-slate-900 font-medium">{selectedNotification.tier}</p>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Current Tier</label>
-                    <p className="text-slate-900 font-medium">{selectedNotification.userInfo?.currentTier || 'FREE'}</p>
-                  </div>
-                  {!selectedNotification.userInfo?.id && (
-                    <div className="bg-amber-50 border border-amber-200 p-3 rounded-lg">
-                      <p className="text-sm text-amber-800 font-medium">⚠️ Anonymous Request</p>
-                      <p className="text-xs text-amber-700 mt-1">This user is not registered. You cannot upgrade anonymous users.</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            <div className="flex gap-3">
-              <button
-                onClick={() => {
-                  setShowUpgradeModal(false);
-                  setSelectedNotification(null);
-                }}
-                className="flex-1 py-3 bg-slate-100 text-slate-700 font-bold rounded-xl hover:bg-slate-200 transition-colors"
-              >
-                {selectedNotification.userInfo?.id ? 'Cancel' : 'Close'}
-              </button>
-              {selectedNotification.userInfo?.id ? (
-                <button
-                  onClick={async () => {
-                    try {
-                      await api.upgradeUser(selectedNotification.userInfo.id, selectedNotification.tier);
-                      // Update the user in the local state
-                      const updatedUser = users.find(u => u.id === selectedNotification.userInfo.id);
-                      if (updatedUser) {
-                        onUpdateUser({ ...updatedUser, tier: selectedNotification.tier as TierLevel });
-                      }
-                      // Remove the notification
-                      setNotifications(prev => prev.filter(n => n.id !== selectedNotification.id));
-                      setShowUpgradeModal(false);
-                      setSelectedNotification(null);
-                      alert('User upgraded successfully!');
-                    } catch (error) {
-                      // User upgrade failed - show alert
-                      alert('Failed to upgrade user. Please try again.');
-                    }
-                  }}
-                  className="flex-1 py-3 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2"
-                >
-                  <Crown size={16} />
-                  Confirm Upgrade
-                </button>
-              ) : (
-                <button
-                  onClick={() => {
-                    setShowUpgradeModal(false);
-                    setSelectedNotification(null);
-                  }}
-                  className="flex-1 py-3 bg-slate-500 text-white font-bold rounded-xl cursor-not-allowed flex items-center justify-center gap-2"
-                  disabled
-                >
-                  Cannot Upgrade Anonymous User
-                </button>
-              )}
             </div>
           </div>
         </div>
       )}
     </div>
   );
-
-  // NEW: Feedback Management Tab
-  const renderFeedback = () => {
-    // State for feedback management
-    const [feedbackData, setFeedbackData] = useState<{
-      feedbackItems: Array<{
-        id: string;
-        userId: string;
-        userName: string;
-        userEmail: string;
-        rating?: number;
-        comments: string;
-        category: 'bug' | 'feature-request' | 'improvement' | 'general';
-        feature?: string;
-        source: 'landing-page' | 'beta-modal';
-        version: string;
-        submittedAt: string;
-        status: 'new' | 'reviewed' | 'resolved';
-      }>;
-      stats: {
-        totalFeedback: number;
-        newFeedback: number;
-        reviewedFeedback: number;
-        resolvedFeedback: number;
-        byCategory: Record<string, number>;
-        bySource: Record<string, number>;
-      };
-    } | null>(null);
-    const [loadingFeedback, setLoadingFeedback] = useState(true);
-    const [selectedFeedback, setSelectedFeedback] = useState<any>(null);
-
-    // Load feedback data when tab is active
-    useEffect(() => {
-      const loadFeedbackData = async () => {
-        try {
-          setLoadingFeedback(true);
-          const data = await api.getAllFeedback();
-          setFeedbackData(data);
-        } catch (error) {
-          console.error('Failed to load feedback data:', error);
-          setFeedbackData(null);
-        } finally {
-          setLoadingFeedback(false);
-        }
-      };
-
-      if (activeTab === 'feedback') {
-        loadFeedbackData();
-      }
-    }, [activeTab]);
-
-    // Handle feedback status update
-    const handleStatusUpdate = async (feedbackId: string, newStatus: 'new' | 'reviewed' | 'resolved') => {
-      try {
-        await api.updateFeedbackStatus(feedbackId, newStatus);
-        // Refresh feedback data
-        const data = await api.getAllFeedback();
-        setFeedbackData(data);
-      } catch (error) {
-        console.error('Failed to update feedback status:', error);
-      }
-    };
-
-    // Get beta statistics for compatibility
-    const stats = BetaTestingManager.getBetaStats();
-
-    return (
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-        <div className="p-6 border-b border-slate-100 flex items-center gap-4">
-          <div className="w-12 h-12 bg-indigo-100 rounded-xl flex items-center justify-center">
-            <MessageSquare className="text-indigo-600" size={24} />
-          </div>
-          <div>
-            <h3 className="text-lg font-bold text-slate-900">Feedback Management</h3>
-            <p className="text-sm text-slate-500">View and manage user feedback submissions</p>
-          </div>
-        </div>
-
-        {/* Feedback Statistics */}
-        <div className="p-6 border-b border-slate-100">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-              <div className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-1">Total Feedback</div>
-              <div className="text-2xl font-black text-slate-900">{feedbackData?.stats.totalFeedback || stats.feedbackSubmitted}</div>
-            </div>
-            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-              <div className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-1">New Feedback</div>
-              <div className="text-2xl font-black text-slate-900">{feedbackData?.stats.newFeedback || 0}</div>
-            </div>
-            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-              <div className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-1">Active Features</div>
-              <div className="text-2xl font-black text-slate-900">{stats.activeFeatures}</div>
-            </div>
-            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-              <div className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-1">Current Version</div>
-              <div className="text-2xl font-black text-slate-900">{stats.version}</div>
-            </div>
-          </div>
-        </div>
-
-        {/* Feedback List */}
-        <div className="p-6">
-          <div className="flex justify-between items-center mb-4">
-            <h4 className="text-lg font-bold text-slate-900">User Feedback Submissions</h4>
-            <span className="bg-slate-100 text-slate-600 text-xs font-bold px-2.5 py-1 rounded-full">{feedbackData?.feedbackItems.length || 0} submissions</span>
-          </div>
-
-          {loadingFeedback ? (
-            <div className="text-center py-12 text-slate-500">
-              <div className="animate-spin border-2 border-slate-300 border-t-slate-600 rounded-full w-8 h-8 mx-auto mb-4"></div>
-              <p className="font-medium">Loading feedback data...</p>
-            </div>
-          ) : feedbackData?.feedbackItems.length === 0 ? (
-            <div className="text-center py-12 text-slate-500">
-              <FileText size={48} className="mx-auto mb-4 text-slate-300" />
-              <p className="font-medium">No feedback submissions yet</p>
-              <p className="text-sm">User feedback will appear here when submitted</p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {feedbackData?.feedbackItems.map((feedbackItem) => {
-                // Find the corresponding user
-                const user = users.find(u => u.id === feedbackItem.userId);
-
-                return (
-                  <div key={feedbackItem.id} className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center text-slate-600 font-bold">
-                          {user ? user.name.charAt(0).toUpperCase() : 'U'}
-                        </div>
-                        <div>
-                          <h5 className="font-bold text-slate-900">{user ? user.name : `User ${feedbackItem.userId}`}</h5>
-                          <p className="text-sm text-slate-500">{user ? user.email : feedbackItem.userEmail || 'Anonymous user'}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className={`text-xs font-bold px-2 py-1 rounded-full border ${feedbackItem.status === 'new' ? 'bg-blue-100 text-blue-700 border-blue-200' :
-                          feedbackItem.status === 'reviewed' ? 'bg-yellow-100 text-yellow-700 border-yellow-200' :
-                            'bg-green-100 text-green-700 border-green-200'
-                          }`}>
-                          {feedbackItem.status.toUpperCase()}
-                        </span>
-                        <span className="text-xs text-slate-400">{new Date(feedbackItem.submittedAt).toLocaleString()}</span>
-                      </div>
-                    </div>
-
-                    {/* Feedback Content */}
-                    <div className="bg-white p-4 rounded-lg border border-slate-100 mb-3">
-                      <div className="flex items-center gap-2 mb-2">
-                        {feedbackItem.rating && (
-                          <div className="flex items-center gap-1">
-                            <StarIcon size={16} className="text-yellow-400 fill-yellow-400" />
-                            <span className="font-bold text-slate-900">{feedbackItem.rating}/5</span>
-                          </div>
-                        )}
-                        <span className={`text-xs font-bold px-2 py-1 rounded-full ${feedbackItem.category === 'bug' ? 'bg-red-100 text-red-700' :
-                          feedbackItem.category === 'feature-request' ? 'bg-purple-100 text-purple-700' :
-                            feedbackItem.category === 'improvement' ? 'bg-blue-100 text-blue-700' :
-                              'bg-slate-100 text-slate-700'
-                          }`}>
-                          {feedbackItem.category.toUpperCase()}
-                        </span>
-                        <span className="text-xs font-bold px-2 py-1 rounded-full bg-indigo-100 text-indigo-700">
-                          {feedbackItem.source.toUpperCase()}
-                        </span>
-                      </div>
-
-                      <div className="mt-2">
-                        <p className="text-sm text-slate-700 font-medium mb-2">Feedback:</p>
-                        <p className="text-slate-900 bg-slate-50 p-3 rounded-lg border border-slate-200">
-                          {feedbackItem.comments}
-                        </p>
-                      </div>
-
-                      {feedbackItem.feature && (
-                        <div className="mt-2 text-sm">
-                          <span className="text-slate-500">Related Feature:</span>
-                          <span className="font-bold text-slate-900 ml-1">{feedbackItem.feature}</span>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Feedback Actions */}
-                    <div className="flex items-center gap-2">
-                      <select
-                        value={feedbackItem.status}
-                        onChange={(e) => handleStatusUpdate(feedbackItem.id, e.target.value as 'new' | 'reviewed' | 'resolved')}
-                        className="flex-1 px-3 py-2 text-sm font-bold rounded-lg border border-slate-200 bg-white text-slate-700 cursor-pointer"
-                      >
-                        <option value="new">New</option>
-                        <option value="reviewed">Reviewed</option>
-                        <option value="resolved">Resolved</option>
-                      </select>
-
-                      {feedbackItem.status === 'new' && (
-                        <button
-                          onClick={() => handleStatusUpdate(feedbackItem.id, 'reviewed')}
-                          className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                          title="Mark as Reviewed"
-                        >
-                          <Eye size={18} />
-                        </button>
-                      )}
-
-                      {feedbackItem.status === 'reviewed' && (
-                        <button
-                          onClick={() => handleStatusUpdate(feedbackItem.id, 'resolved')}
-                          className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
-                          title="Mark as Resolved"
-                        >
-                          <Check size={18} />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  };
 };

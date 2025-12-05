@@ -1,92 +1,24 @@
 <!DOCTYPE html>
 <html lang="en">
-
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport"
-    content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-
-  <!-- PWA & Mobile Settings -->
-  <meta name="theme-color" content="#ffffff" />
-  <meta name="mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="SnapifY" />
-
-  <title>SnapifY - Event Sharing</title>
-
-  <!-- SEO Meta Tags -->
-  <meta name="description"
-    content="Seamlessly capture, share, and manage event memories with AI-enhanced organization and real-time sharing." />
-  <meta name="keywords"
-    content="event sharing, photo sharing, event management, AI photo organization, real-time sharing" />
-  <meta name="author" content="SnapifY" />
-
-  <!-- Open Graph / Facebook -->
-  <meta property="og:type" content="website" />
-  <meta property="og:url" content="https://snapify.skytech.mk" />
-  <meta property="og:title" content="SnapifY - Event Sharing" />
-  <meta property="og:description"
-    content="Seamlessly capture, share, and manage event memories with AI-enhanced organization and real-time sharing." />
-  <meta property="og:image"
-    content="https://via.placeholder.com/1200x630/6366f1/ffffff?text=SnapifY+-+Event+Sharing+Platform" />
-  <meta property="og:image:width" content="1200" />
-  <meta property="og:image:height" content="630" />
-  <meta property="og:site_name" content="SnapifY" />
-
-  <!-- Twitter -->
-  <meta property="twitter:card" content="summary_large_image" />
-  <meta property="twitter:url" content="https://snapify.skytech.mk" />
-  <meta property="twitter:title" content="SnapifY - Event Sharing" />
-  <meta property="twitter:description"
-    content="Seamlessly capture, share, and manage event memories with AI-enhanced organization and real-time sharing." />
-  <meta property="twitter:image"
-    content="https://via.placeholder.com/1200x630/6366f1/ffffff?text=SnapifY+-+Event+Sharing+Platform" />
-
-  <!-- Favicon Fallbacks (PWA uses manifest, but browser needs these) -->
-  <link rel="icon" href="/snapify-logo.png" />
-  <link rel="apple-touch-icon" href="/snapify-logo.png" />
-
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
-    rel="stylesheet">
-  <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
-
-  <!-- Dynamic OG Image and URL Configuration -->
-  <script>
-    (function () {
-      // Detect current domain and update OG meta tags accordingly
-      const currentDomain = window.location.hostname;
-      const isSnapifyMk = currentDomain === 'snapify.mk';
-      const isSnapifySkytech = currentDomain === 'snapify.skytech.mk';
-
-      // Update OG URL and image based on domain
-      const ogUrl = document.querySelector('meta[property="og:url"]');
-      const ogImage = document.querySelector('meta[property="og:image"]');
-      const twitterUrl = document.querySelector('meta[property="twitter:url"]');
-      const twitterImage = document.querySelector('meta[property="twitter:image"]');
-
-      if (ogUrl && ogImage && twitterUrl && twitterImage) {
-        if (isSnapifyMk) {
-          ogUrl.setAttribute('content', 'https://snapify.mk');
-          ogImage.setAttribute('content', 'https://snapify.mk/og-image.png');
-          twitterUrl.setAttribute('content', 'https://snapify.mk');
-          twitterImage.setAttribute('content', 'https://snapify.mk/og-image.png');
-        } else if (isSnapifySkytech) {
-          ogUrl.setAttribute('content', 'https://snapify.skytech.mk');
-          ogImage.setAttribute('content', 'https://snapify.skytech.mk/og-image.png');
-          twitterUrl.setAttribute('content', 'https://snapify.skytech.mk');
-          twitterImage.setAttribute('content', 'https://snapify.skytech.mk/og-image.png');
-        } else {
-          // Fallback for development/localhost
-          const baseUrl = window.location.origin;
-          ogUrl.setAttribute('content', baseUrl);
-          ogImage.setAttribute('content', baseUrl + '/og-image.png');
-          twitterUrl.setAttribute('content', baseUrl);
-          twitterImage.setAttribute('content', baseUrl + '/og-image.png');
-        }
-      }
-    })();
-  </script>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    
+    <!-- PWA & Mobile Settings -->
+    <meta name="theme-color" content="#ffffff" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="SnapifY" />
+    
+    <title>SnapifY</title>
+    
+    <!-- Favicon Fallbacks (PWA uses manifest, but browser needs these) -->
+    <link rel="icon" href="/favicon.ico" />
+    <link rel="apple-touch-icon" href="/pwa-192x192.png" />
+    
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
   <script type="importmap">
 {
   "imports": {
@@ -104,10 +36,8 @@
 }
 </script>
 </head>
-
-<body class="bg-slate-50 text-slate-900 antialiased">
-  <div id="root"></div>
+  <body class="bg-slate-50 text-slate-900 antialiased">
+    <div id="root"></div>
   <script type="module" src="/index.tsx"></script>
 </body>
-
 </html>

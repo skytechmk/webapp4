@@ -7,26 +7,13 @@
   --sar: env(safe-area-inset-right);
 }
 
-/* APP SHELL SETUP: Better mobile handling */
-html,
-body {
+/* APP SHELL SETUP: Lock the body scroll */
+html, body, #root {
   height: 100%;
   width: 100%;
-  background-color: #f8fafc;
-  /* matches bg-slate-50 */
-}
-
-#root {
-  min-height: 100vh;
-  min-height: 100dvh;
-  /* Better mobile viewport height */
-}
-
-/* Prevent rubber-banding on iOS but allow normal scrolling */
-@supports (-webkit-touch-callout: none) {
-  body {
-    overscroll-behavior-y: contain;
-  }
+  overflow: hidden; /* Prevent rubber-banding on iOS */
+  background-color: #f8fafc; /* matches bg-slate-50 */
+  position: fixed; /* Hard lock */
 }
 
 body {
@@ -36,26 +23,17 @@ body {
 
 /* Custom scrollbar */
 .no-scrollbar::-webkit-scrollbar {
-  display: none;
+    display: none;
 }
-
 .no-scrollbar {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
+    -ms-overflow-style: none;
+    scrollbar-width: none;
 }
 
 @keyframes float {
-  0% {
-    transform: translateY(0px);
-  }
-
-  50% {
-    transform: translateY(-20px);
-  }
-
-  100% {
-    transform: translateY(0px);
-  }
+  0% { transform: translateY(0px); }
+  50% { transform: translateY(-20px); }
+  100% { transform: translateY(0px); }
 }
 
 .animate-float {
@@ -65,80 +43,4 @@ body {
 .animate-float-delayed {
   animation: float 8s ease-in-out infinite;
   animation-delay: 2s;
-}
-
-/* Blob animation for background orbs */
-@keyframes blob {
-
-  0%,
-  100% {
-    transform: translate(0, 0) scale(1);
-  }
-
-  25% {
-    transform: translate(20px, -50px) scale(1.1);
-  }
-
-  50% {
-    transform: translate(-20px, 20px) scale(0.9);
-  }
-
-  75% {
-    transform: translate(50px, 50px) scale(1.05);
-  }
-}
-
-.animate-blob {
-  animation: blob 20s ease-in-out infinite;
-}
-
-.animation-delay-2000 {
-  animation-delay: 2s;
-}
-
-.animation-delay-4000 {
-  animation-delay: 4s;
-}
-
-.animation-delay-500 {
-  animation-delay: 0.5s;
-}
-
-.animation-delay-1000 {
-  animation-delay: 1s;
-}
-
-/* Gradient animation */
-@keyframes gradient-x {
-
-  0%,
-  100% {
-    background-position: 0% 50%;
-  }
-
-  50% {
-    background-position: 100% 50%;
-  }
-}
-
-.animate-gradient-x {
-  background-size: 200% 200%;
-  animation: gradient-x 3s ease infinite;
-}
-
-/* Slow pulse for sparkle overlay */
-@keyframes pulse-slow {
-
-  0%,
-  100% {
-    opacity: 0.3;
-  }
-
-  50% {
-    opacity: 0.6;
-  }
-}
-
-.animate-pulse-slow {
-  animation: pulse-slow 4s ease-in-out infinite;
 }
