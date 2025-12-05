@@ -63,12 +63,15 @@ interface LandingPageProps {
 
 // --- Mock Data & Constants ---
 const HERO_IMAGES = [
-    "https://images.unsplash.com/photo-1530103862676-de3c9a59af57?auto=format&fit=crop&q=80&w=2940", // Friends/Party (Updated)
-    "https://images.unsplash.com/photo-1523580494863-6f3031224c94?auto=format&fit=crop&q=80&w=2940", // Graduation/Event
-    "https://images.unsplash.com/photo-1511578314322-379afb476865?auto=format&fit=crop&q=80&w=2940", // Conference/Professional
-    "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&q=80&w=2940", // Nightclub/Event
-    "https://images.unsplash.com/photo-1515934751635-c81c6bc9a2d8?auto=format&fit=crop&q=80&w=2940"  // Wedding Ceremony
+    "https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?auto=format&fit=crop&q=80&w=2400", // Motto1: Own the Night. Capture the Chaos. - Concert crowd chaos
+    "https://images.unsplash.com/photo-1429962714451-bb934ecdc4ec?auto=format&fit=crop&q=80&w=2400", // Motto2: Dance-Floor Energy. Zero Missed Moments. - Nightclub dance floor
+    "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&q=80&w=2400", // Motto3: From Strobe to Story in Seconds. - Concert with lights
+    "https://images.unsplash.com/photo-1598387993441-a364f854c3e1?auto=format&fit=crop&q=80&w=2400", // Motto4: Every Beat. Every Flash. Every Vibe. - DJ nightclub party
+    "https://images.unsplash.com/photo-1506157786151-b8491531f063?auto=format&fit=crop&q=80&w=2400"  // Motto5: Lights. Camera. Party. - Festival crowd lights
 ];
+
+// Rotating mottos - synchronized with 5 hero images
+const MOTTO_KEYS = ['motto1', 'motto2', 'motto3', 'motto4', 'motto5'] as const;
 
 // Use the centralized pricing tiers from constants.ts
 const getPricingTiers = (t: TranslateFn) => getPricingTiersFromConstants(t);
@@ -121,6 +124,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({
     const [showLangMenu, setShowLangMenu] = useState(false);
     const [showTerms, setShowTerms] = useState(false);
     const googleButtonRef = useRef<HTMLDivElement>(null);
+    const mottoRef = useRef<HTMLHeadingElement>(null);
+    const [dynamicFontSize, setDynamicFontSize] = useState('7vw');
 
     // Form State
     const [isSignUp, setIsSignUp] = useState(false);
@@ -138,6 +143,30 @@ export const LandingPage: React.FC<LandingPageProps> = ({
 
     // Auth mode state
     const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
+
+    // Dynamic font size calculation based on screen width
+    useEffect(() => {
+        const calculateFontSize = () => {
+            const width = window.innerWidth;
+            if (width < 375) {
+                setDynamicFontSize('6vw'); // Very small phones
+            } else if (width < 480) {
+                setDynamicFontSize('6.5vw'); // Small phones
+            } else if (width < 768) {
+                setDynamicFontSize('7vw'); // Medium phones
+            } else if (width < 1024) {
+                setDynamicFontSize('5.5vw'); // Tablets
+            } else if (width < 1440) {
+                setDynamicFontSize('4.5vw'); // Small desktops
+            } else {
+                setDynamicFontSize('4rem'); // Large desktops
+            }
+        };
+
+        calculateFontSize();
+        window.addEventListener('resize', calculateFontSize);
+        return () => window.removeEventListener('resize', calculateFontSize);
+    }, []);
 
     useEffect(() => {
         const interval = setInterval(() => {
@@ -302,30 +331,41 @@ export const LandingPage: React.FC<LandingPageProps> = ({
 
     // Deluxe & Playful Theme Implementation
     return (
-        <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/30 to-pink-50/20 text-slate-900 relative overflow-hidden flex flex-col font-sans selection:bg-indigo-100 selection:text-indigo-900">
+        <div className="min-h-screen bg-gradient-to-br from-[#0b0b1c] via-[#1a0b2e] to-[#0b1f33] text-slate-50 relative overflow-hidden flex flex-col font-sans selection:bg-pink-200 selection:text-slate-900">
 
-            {/* Animated Gradient Background Orbs */}
+            {/* Animated Gradient Background Orbs - Enhanced Energy */}
             <div className="absolute inset-0 overflow-hidden pointer-events-none">
-                <div className="absolute top-0 -left-40 w-96 h-96 bg-gradient-to-br from-indigo-400/20 to-purple-400/20 rounded-full blur-3xl animate-blob" />
-                <div className="absolute top-0 -right-40 w-96 h-96 bg-gradient-to-br from-pink-400/20 to-rose-400/20 rounded-full blur-3xl animate-blob animation-delay-2000" />
-                <div className="absolute -bottom-40 left-1/2 w-96 h-96 bg-gradient-to-br from-cyan-400/20 to-blue-400/20 rounded-full blur-3xl animate-blob animation-delay-4000" />
+                <div className="absolute top-0 -left-40 w-96 h-96 bg-gradient-to-br from-indigo-500/30 to-purple-500/30 rounded-full blur-3xl animate-blob" />
+                <div className="absolute top-0 -right-40 w-96 h-96 bg-gradient-to-br from-pink-500/30 to-rose-500/30 rounded-full blur-3xl animate-blob animation-delay-2000" />
+                <div className="absolute -bottom-40 left-1/2 w-96 h-96 bg-gradient-to-br from-cyan-500/30 to-blue-500/30 rounded-full blur-3xl animate-blob animation-delay-4000" />
+                <div className="absolute top-1/2 left-1/4 w-64 h-64 bg-gradient-to-br from-yellow-400/20 to-orange-400/20 rounded-full blur-3xl animate-blob animation-delay-1000" />
+                <div className="absolute bottom-1/4 right-1/4 w-80 h-80 bg-gradient-to-br from-purple-400/25 to-pink-400/25 rounded-full blur-3xl animate-blob animation-delay-3000" />
             </div>
 
             {/* Background Hero Layer with Enhanced Effects */}
-            <div className="absolute top-0 left-0 right-0 h-[600px] md:h-[700px] overflow-hidden pointer-events-none rounded-b-[3rem] md:rounded-b-[5rem] shadow-2xl z-0 bg-gradient-to-br from-slate-900 via-indigo-900 to-purple-900">
+            <div className="absolute top-0 left-0 right-0 h-[600px] md:h-[700px] overflow-hidden pointer-events-none rounded-b-[3rem] md:rounded-b-[5rem] shadow-2xl z-0 bg-gradient-to-br from-slate-900 via-fuchsia-900 to-indigo-900">
                 {HERO_IMAGES.map((src, idx) => (
                     <div
                         key={idx}
-                        className={`absolute inset-0 transition-opacity duration-1000 ease-in-out ${idx === currentHeroImageIndex ? 'opacity-100' : 'opacity-0'}`}
+                        className={`absolute inset-0 transition-opacity duration-1000 ${idx === currentHeroImageIndex ? 'opacity-100' : 'opacity-0'
+                            }`}
                     >
                         <img
                             src={src}
                             alt="Background"
                             className="w-full h-full object-cover animate-float-delayed scale-105"
+                            loading="eager"
+                            crossOrigin="anonymous"
+                            onError={(e) => {
+                                // Fallback to gradient if image fails to load
+                                e.currentTarget.style.display = 'none';
+                            }}
                         />
-                        <div className="absolute inset-0 bg-gradient-to-b from-indigo-900/70 via-purple-900/50 to-slate-900/90" />
-                        {/* Sparkle overlay */}
-                        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(255,255,255,0.1),transparent_50%)] animate-pulse-slow" />
+                        <div className="absolute inset-0 bg-gradient-to-b from-indigo-900/60 via-purple-900/40 to-slate-900/80" />
+                        {/* Enhanced sparkle overlay with pulsing */}
+                        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(255,255,255,0.15),transparent_50%)] animate-pulse-slow" />
+                        {/* Additional glow effect */}
+                        <div className="absolute inset-0 bg-gradient-to-t from-transparent via-indigo-500/10 to-transparent animate-pulse" />
                     </div>
                 ))}
 
@@ -433,18 +473,55 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             {/* Main Content */}
             <main className="relative z-10 max-w-7xl mx-auto px-6 pt-8 pb-24 md:pt-16 flex flex-col items-center text-center flex-grow w-full">
 
-                {/* Floating Badge with Glassmorphism */}
+                {/* Floating Badge with Glassmorphism - Enhanced */}
                 <div className="animate-float mb-8 group cursor-default">
-                    <span className="inline-flex items-center py-2 px-5 rounded-full bg-white/20 backdrop-blur-xl text-white text-sm font-bold border border-white/30 shadow-2xl shadow-indigo-500/20 hover:scale-105 transition-transform duration-300">
-                        <StarIcon size={14} className="mr-2 fill-yellow-400 text-yellow-400" />
-                        {t('ultimateEventCompanion')}
+                    <span className="inline-flex items-center py-2 px-5 rounded-full bg-white/25 backdrop-blur-xl text-white text-sm font-bold border border-white/40 shadow-2xl shadow-indigo-500/30 hover:scale-105 transition-transform duration-300 relative">
+                        <div className="absolute inset-0 rounded-full bg-gradient-to-r from-indigo-500/20 to-pink-500/20 animate-pulse" />
+                        <StarIcon size={14} className="mr-2 fill-yellow-400 text-yellow-400 animate-pulse relative z-10" />
+                        <span className="relative z-10">{t('ultimateEventCompanion')}</span>
                     </span>
                 </div>
 
-                <h1 className="text-5xl md:text-7xl lg:text-8xl font-black mb-8 tracking-tight leading-tight text-white drop-shadow-2xl">
-                    {t('heroTitlePrefix')} <br />
-                    <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-200 via-pink-200 to-purple-200 animate-gradient-x inline-block">
-                        {t('heroTitleSuffix')}
+                <h1
+                    ref={mottoRef}
+                    className="font-black mb-6 md:mb-8 tracking-tight text-white flex items-center justify-center px-3 md:px-6"
+                    style={{
+                        fontSize: dynamicFontSize,
+                        lineHeight: window.innerWidth < 768 ? '1.2' : '1.3',
+                        minHeight: window.innerWidth < 768 ? '140px' : '280px',
+                        maxHeight: window.innerWidth < 768 ? '200px' : '350px',
+                        wordBreak: 'break-word',
+                        overflowWrap: 'break-word'
+                    }}>
+                    <span className="relative inline-block w-full text-center max-w-6xl">
+                        {MOTTO_KEYS.map((mottoKey, idx) => (
+                            <span
+                                key={mottoKey}
+                                className={`absolute inset-0 transition-all duration-1000 flex items-center justify-center px-1 ${idx === currentHeroImageIndex % MOTTO_KEYS.length
+                                    ? 'opacity-100 scale-100'
+                                    : 'opacity-0 scale-95'
+                                    }`}
+                                style={{
+                                    textShadow: '0 0 40px rgba(236,72,153,0.8), 0 0 80px rgba(139,92,246,0.6), 0 4px 30px rgba(0,0,0,1), 0 8px 60px rgba(0,0,0,0.9), 0 0 120px rgba(59,130,246,0.4)'
+                                }}
+                            >
+                                <span
+                                    className="bg-gradient-to-r from-pink-300 via-purple-300 to-cyan-300 bg-clip-text text-transparent font-extrabold animate-pulse-slow relative text-center"
+                                    style={{
+                                        filter: 'brightness(1.2) contrast(1.1)',
+                                        WebkitTextStroke: window.innerWidth < 768 ? '0.3px rgba(255,255,255,0.3)' : '0.5px rgba(255,255,255,0.3)',
+                                        display: 'inline-block',
+                                        lineHeight: 'inherit',
+                                        wordBreak: 'break-word',
+                                        overflowWrap: 'break-word'
+                                    }}
+                                >
+                                    {t(mottoKey)}
+                                </span>
+                            </span>
+                        ))}
+                        {/* Invisible placeholder to maintain layout */}
+                        <span className="opacity-0 text-center" aria-hidden="true" style={{ lineHeight: 'inherit' }}>{t('motto1')}</span>
                     </span>
                 </h1>
 

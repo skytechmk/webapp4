@@ -6,7 +6,7 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     appSubtitle: "Event Sharing Platform",
     heroTitlePrefix: "Every Angle.",
     heroTitleSuffix: "Every Moment.",
-    heroDesc: "The modern digital guestbook. Collect photos and videos from every guest in real-time without them downloading an app.",
+    heroDesc: "Light up your night. Turn every party into a live highlight reel—collect neon-lit photos and videos from every guest instantly, no app needed.",
     getStarted: "Get Started",
     adminDemo: "Admin Demo",
     signIn: "Sign In",
@@ -307,6 +307,13 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     pricingFeatureAnalytics: "Analytics Dashboard",
     pricingFeatureSupport: "Priority Support",
     ultimateEventCompanion: "The Ultimate Event Companion",
+
+    // ROTATING MOTTOS
+    motto1: "Own the Night. Capture the Chaos.",
+    motto2: "Dance-Floor Energy. Zero Missed Moments.",
+    motto3: "From Strobe to Story in Seconds.",
+    motto4: "Every Beat. Every Flash. Every Vibe.",
+    motto5: "Lights. Camera. Party.",
 
     // BETA FEEDBACK SECTION
     betaFeedbackTitle: "Help Us Improve",
@@ -677,6 +684,13 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     pricingFeatureSupport: "Приоритетна Поддршка",
     ultimateEventCompanion: "Совршениот Сопатник за Настани",
 
+    // ROTATING MOTTOS MK
+    motto1: "Владеј со Ноќта. Фати го Хаосот.",
+    motto2: "Енергија на Танц-Подот. Нула Пропуштени Моменти.",
+    motto3: "От Строб до Приказна за Секунди.",
+    motto4: "Секој Бит. Секој Блиц. Секоја Вибрација.",
+    motto5: "Светла. Камера. Забава.",
+
     // BETA FEEDBACK SECTION MK
     betaFeedbackTitle: "Помогнете ни да го подобриме",
     betaFeedbackSubtitle: "Споделете ги вашите мислења за да го подобриме SnapifY",
@@ -986,6 +1000,13 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     pricingFeatureSupport: "Öncelikli Destek",
     ultimateEventCompanion: "Etkinliklerin En İyi Arkadaşı",
 
+    // ROTATING MOTTOS TR
+    motto1: "Geceye Sahip Çık. Kaosu Yakala.",
+    motto2: "Dans Pisti Enerjisi. Sıfır Kaçırılan An.",
+    motto3: "Stroboskoptan Hikayeye Saniyeler İçinde.",
+    motto4: "Her Ritim. Her Flaş. Her Vibe.",
+    motto5: "Işıklar. Kamera. Parti.",
+
     // BETA FEEDBACK SECTION TR
     betaFeedbackTitle: "Bize Yardım Edin",
     betaFeedbackSubtitle: "SnapifY'yi geliştirmek için düşüncelerinizi paylaşın",
@@ -1293,7 +1314,14 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     pricingFeatureEmail: "Marketing Email",
     pricingFeatureAnalytics: "Paneli i Analitikave",
     pricingFeatureSupport: "Mbështetje Prioritare",
-    ultimateEventCompanion: "Shoqëruesi i Përkryer për Ngjarje",
+    ultimateEventCompanion: "Shoqëruesi Më i Mirë i Ngjarjeve",
+
+    // ROTATING MOTTOS SQ
+    motto1: "Zotëro Natën. Kap Kaosit.",
+    motto2: "Energji e Dyshemesë së Vallëzimit. Zero Momente të Humbura.",
+    motto3: "Nga Strobo në Histori në Sekonda.",
+    motto4: "Çdo Ritëm. Çdo Shkëlqim. Çdo Vibe.",
+    motto5: "Drita. Kamera. Festë.",
 
     // BETA FEEDBACK SECTION SQ
     betaFeedbackTitle: "Na Ndihmoni të Përmirësohem",

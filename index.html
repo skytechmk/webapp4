@@ -1,24 +1,48 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-    
-    <!-- PWA & Mobile Settings -->
-    <meta name="theme-color" content="#ffffff" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="SnapifY" />
-    
-    <title>SnapifY</title>
-    
-    <!-- Favicon Fallbacks (PWA uses manifest, but browser needs these) -->
-    <link rel="icon" href="/favicon.ico" />
-    <link rel="apple-touch-icon" href="/pwa-192x192.png" />
-    
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-    <script src="https://accounts.google.com/gsi/client" async defer></script>
-    <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport"
+    content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+
+  <!-- PWA & Mobile Settings -->
+  <meta name="theme-color" content="#ffffff" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="SnapifY" />
+
+  <title>SnapifY</title>
+
+  <!-- Favicon Fallbacks (PWA uses manifest, but browser needs these) -->
+  <link rel="icon" href="/favicon.ico" />
+  <link rel="apple-touch-icon" href="/pwa-192x192.png" />
+
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+    rel="stylesheet">
+
+  <!-- Open Graph / Facebook Meta Tags -->
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://snapify.mk/" />
+  <meta property="og:title" content="SnapifY - Own the Night. Capture the Chaos." />
+  <meta property="og:description"
+    content="Light up your night. Turn every party into a live highlight reel—collect neon-lit photos and videos from every guest instantly, no app needed." />
+  <meta property="og:image" content="https://snapify.mk/og-image.png" />
+  <meta property="og:image:secure_url" content="https://snapify.mk/og-image.png" />
+  <meta property="og:image:width" content="2400" />
+  <meta property="og:image:height" content="1600" />
+  <meta property="og:image:alt" content="SnapifY - Event Photography Platform" />
+
+  <!-- Twitter Card Meta Tags -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:url" content="https://snapify.mk/" />
+  <meta name="twitter:title" content="SnapifY - Own the Night. Capture the Chaos." />
+  <meta name="twitter:description"
+    content="Light up your night. Turn every party into a live highlight reel—collect neon-lit photos and videos from every guest instantly, no app needed." />
+  <meta name="twitter:image" content="https://snapify.mk/og-image.png" />
+
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
   <script type="importmap">
 {
   "imports": {
@@ -36,8 +60,10 @@
 }
 </script>
 </head>
-  <body class="bg-slate-50 text-slate-900 antialiased">
-    <div id="root"></div>
+
+<body class="bg-slate-50 text-slate-900 antialiased">
+  <div id="root"></div>
   <script type="module" src="/index.tsx"></script>
 </body>
+
 </html>
