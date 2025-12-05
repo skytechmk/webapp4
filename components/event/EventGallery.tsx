@@ -37,7 +37,7 @@ interface EventGalleryProps {
     t: TranslateFn;
 }
 
-export const EventGallery: React.FC<EventGalleryProps> = ({
+export const EventGallery = React.memo<EventGalleryProps>(({
     event,
     currentUser,
     hostUser,
@@ -68,7 +68,8 @@ export const EventGallery: React.FC<EventGalleryProps> = ({
     const [linkCopied, setLinkCopied] = useState(false);
     const [commentText, setCommentText] = useState('');
 
-    // Sync props with Zustand stores
+    // Sync props with Zustand stores - Performance optimization: Prevent re-render loops by only syncing when props differ from store state
+    // Note: If deep comparison is needed for complex objects, consider using a library like 'fast-deep-equal'
     useEffect(() => {
         if (event.media !== localMedia) {
             useEventStore.getState().updateEvent({
@@ -76,7 +77,7 @@ export const EventGallery: React.FC<EventGalleryProps> = ({
                 media: event.media
             });
         }
-    }, [event.media]);
+    }, [event.media, localMedia]);
 
     useEffect(() => {
         if (event.guestbook !== localGuestbook) {
@@ -85,7 +86,7 @@ export const EventGallery: React.FC<EventGalleryProps> = ({
                 guestbook: event.guestbook
             });
         }
-    }, [event.guestbook]);
+    }, [event.guestbook, localGuestbook]);
 
     const openLightbox = (index: number) => {
         setLightboxIndex(index);
@@ -216,6 +217,6 @@ export const EventGallery: React.FC<EventGalleryProps> = ({
             )}
         </main>
     );
-};
+});
 
 EventGallery.displayName = 'EventGallery';

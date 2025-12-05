@@ -68,6 +68,8 @@ export class ZipManager {
     private options: ZipOptions;
     private cancellationToken: { cancelled: boolean };
     private cleanupFunctions: (() => void)[] = [];
+    private worker: Worker | null = null;
+    private processedFiles: { filename: string; blob: Blob }[] = [];
 
     constructor(options: ZipOptions = {}) {
         this.zip = new JSZip();
@@ -260,12 +262,9 @@ export class ZipManager {
                 return;
             }
 
-            // Add file directly to zip (watermark functionality removed)
-            console.log(`📦 Adding ${file.filename} to zip`);
-            const addStartTime = Date.now();
-            this.addFileToZip(blob, file.filename);
-            const addDuration = Date.now() - addStartTime;
-            console.log(`📦 Added ${file.filename} to zip in ${addDuration}ms`);
+            // Collect processed file for zip generation (watermark functionality removed)
+            console.log(`📦 Collecting ${file.filename} for zip generation`);
+            this.processedFiles.push({ filename: file.filename, blob });
 
             this.progress.processedFiles++;
             console.log(`✅ Completed processing ${file.filename} (${this.progress.processedFiles}/${this.progress.totalFiles})`);
@@ -417,6 +416,74 @@ export class ZipManager {
     }
 
     /**
+     * Generate zip using Web Worker to prevent blocking main thread
+     */
+    private async generateZipWithWorker(eventTitle: string, compressionLevel: number): Promise<Blob> {
+        return new Promise((resolve, reject) => {
+            try {
+                this.worker = new Worker('/workers/zipWorker.js');
+
+                this.worker.onmessage = (e) => {
+                    const data = e.data;
+                    if (data.type === 'progress') {
+                        // Update progress during zip generation
+                        this.progress.progressPercentage = data.progress;
+                        this.updateProgress();
+                    } else if (data.type === 'complete') {
+                        this.worker?.terminate();
+                        this.worker = null;
+                        resolve(data.zipBlob);
+                    } else if (data.type === 'error') {
+                        this.worker?.terminate();
+                        this.worker = null;
+                        reject(new Error(data.error));
+                    }
+                };
+
+                this.worker.onerror = (error) => {
+                    console.error('Zip worker error:', error);
+                    this.worker?.terminate();
+                    this.worker = null;
+                    reject(error);
+                };
+
+                // Send files to worker
+                this.worker.postMessage({
+                    files: this.processedFiles,
+                    eventTitle,
+                    compressionLevel
+                });
+
+            } catch (error) {
+                console.error('Failed to create zip worker:', error);
+                // Fallback to main thread generation
+                console.log('🔄 Falling back to main thread zip generation...');
+                resolve(this.generateZipFallback(eventTitle, compressionLevel));
+            }
+        });
+    }
+
+    /**
+     * Fallback zip generation in main thread
+     */
+    private async generateZipFallback(eventTitle: string, compressionLevel: number): Promise<Blob> {
+        const zip = new JSZip();
+        const folder = zip.folder(eventTitle.replace(/[^a-z0-9]/gi, '_'));
+
+        for (const file of this.processedFiles) {
+            folder!.file(file.filename, file.blob);
+        }
+
+        return await zip.generateAsync({
+            type: "blob",
+            compression: "DEFLATE",
+            compressionOptions: {
+                level: compressionLevel
+            }
+        });
+    }
+
+    /**
      * Main method to generate a zip archive with comprehensive progress tracking and error handling.
      * Implements the complete zip generation workflow including:
      * - Folder creation
@@ -515,52 +582,12 @@ export class ZipManager {
                 throw new Error('Zip generation was cancelled');
             }
 
-            // Generate zip with specified compression level and timeout
-            console.log('🔧 Generating final zip archive...');
+            // Generate zip using Web Worker for performance optimization
+            console.log('🔧 Generating final zip archive using Web Worker...');
             const compressionLevel = this.options.compressionLevel !== undefined ? this.options.compressionLevel : 5;
 
-            // Calculate adaptive timeout for zip generation based on estimated size
-            const baseZipTimeout = 60000; // 60 seconds base
-            const sizeBasedTimeout = Math.min(this.progress.estimatedSizeMb * 10000, 300000); // 10 seconds per MB, max 5 minutes
-            const adaptiveZipTimeout = Math.max(baseZipTimeout, sizeBasedTimeout);
-
-            console.log(`🕒 Setting adaptive zip generation timeout: ${adaptiveZipTimeout / 1000}s (estimated size: ${this.progress.estimatedSizeMb.toFixed(2)} MB)`);
-
-            // Add timeout for zip generation
-            const zipGenerationStartTime = Date.now();
-            let zipBlob;
-            try {
-                zipBlob = await Promise.race([
-                    this.zip.generateAsync({
-                        type: "blob",
-                        compression: "DEFLATE",
-                        compressionOptions: {
-                            level: compressionLevel
-                        }
-                    }),
-                    new Promise((_, reject) =>
-                        setTimeout(() => reject(new Error(`Zip generation timed out after ${adaptiveZipTimeout / 1000} seconds`)), adaptiveZipTimeout)
-                    )
-                ]);
-            } catch (zipError) {
-                console.error('❌ Zip generation failed or timed out:', zipError);
-                // Fallback: try with lower compression if timeout occurs
-                if (zipError.message.includes('timed out')) {
-                    console.log('🔄 Retrying with lower compression level...');
-                    zipBlob = await this.zip.generateAsync({
-                        type: "blob",
-                        compression: "DEFLATE",
-                        compressionOptions: {
-                            level: 1 // Fastest compression
-                        }
-                    });
-                } else {
-                    throw zipError;
-                }
-            }
-
-            const zipGenerationDuration = Date.now() - zipGenerationStartTime;
-            console.log(`🔧 Zip generation completed in ${zipGenerationDuration}ms, final size: ${(zipBlob.size / (1024 * 1024)).toFixed(2)} MB`);
+            const zipBlob = await this.generateZipWithWorker(eventTitle, compressionLevel);
+            console.log(`🔧 Zip generation completed, final size: ${(zipBlob.size / (1024 * 1024)).toFixed(2)} MB`);
 
             // Mark as complete and update final progress
             console.log('✅ Marking zip generation as complete');

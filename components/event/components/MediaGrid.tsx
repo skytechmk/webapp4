@@ -26,7 +26,7 @@ interface MediaGridProps {
     t: TranslateFn;
 }
 
-export const MediaGrid: React.FC<MediaGridProps> = ({
+export const MediaGrid = React.memo<MediaGridProps>(({
     event,
     currentUser,
     isOwner,
@@ -64,6 +64,13 @@ export const MediaGrid: React.FC<MediaGridProps> = ({
         return items;
     }, [displayMedia, isOwner, currentUser, isBulkDeleteMode]);
 
+    // Performance optimization: Create a Map for O(1) media index lookup instead of O(n) array.indexOf
+    const mediaIndexMap = useMemo(() => {
+        const map = new Map<string, number>();
+        displayMedia.forEach((item, index) => map.set(item.id, index));
+        return map;
+    }, [displayMedia]);
+
     const renderGridItem = React.useCallback((index: number) => {
         const item = gridItems[index];
 
@@ -98,7 +105,8 @@ export const MediaGrid: React.FC<MediaGridProps> = ({
             );
         } else {
             const mediaItem = item as MediaItem;
-            const mediaIndex = displayMedia.indexOf(mediaItem);
+            // Performance optimization: Use Map for O(1) lookup instead of O(n) array.indexOf
+            const mediaIndex = mediaIndexMap.get(mediaItem.id) ?? 0;
 
             return (
                 <div key={itemKey} className="relative group rounded-2xl overflow-hidden bg-slate-100 shadow-sm hover:shadow-md transition-all cursor-pointer h-full" onClick={() => !isBulkDeleteMode && openLightbox(mediaIndex)}>
@@ -181,4 +189,6 @@ export const MediaGrid: React.FC<MediaGridProps> = ({
             />
         </div>
     );
-};
+});
+
+MediaGrid.displayName = 'MediaGrid';

@@ -4,7 +4,7 @@
  */
 
 import * as React from 'react';
-const { useState, useEffect } = React;
+const { useState, useEffect, useMemo } = React;
 import { useAuthStore, useEventStore, useUserStore } from '../../stores';
 import { User, UserRole, Event, TranslateFn } from '../../types';
 import { AdminHeader } from './components/AdminHeader';
@@ -58,11 +58,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     const allUsers = useUserStore((state) => state.allUsers);
     const allEvents = useEventStore((state) => state.events);
 
-    // Sync props with Zustand stores
+    // Sync props with Zustand stores - Performance optimization: Prevent re-render loops by syncing props to store
+    // Note: If deep comparison is needed, consider using shallow comparison or a library for complex objects
     useEffect(() => {
         useUserStore.getState().setAllUsers(users);
         useEventStore.getState().setEvents(events);
     }, [users, events]);
+
+    // Performance optimization: Memoize expensive filtered events computation
+    const filteredEvents = useMemo(() => {
+        return selectedUserForEvents ? events.filter(event => event.hostId === selectedUserForEvents.id) : [];
+    }, [events, selectedUserForEvents]);
 
     const backToUsers = () => {
         setSelectedUserForEvents(null);
@@ -105,7 +111,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         users={users}
                         user={selectedUserForEvents}
                         onBack={backToUsers}
-                        events={events.filter(event => event.hostId === selectedUserForEvents?.id)}
+                        events={filteredEvents}
                         onDeleteEvent={onDeleteEvent}
                         onUpdateEvent={onUpdateEvent}
                         onDownloadEvent={onDownloadEvent}
