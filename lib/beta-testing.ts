@@ -266,7 +266,7 @@ export class BetaTestingManager {
     comments: string;
     feature: string;
     category: 'bug' | 'feature-request' | 'improvement' | 'general';
-  }): Promise<{ success: boolean; feedbackId: string }> {
+  }): Promise<{ success: boolean; feedbackId?: string }> {
     try {
       // Import the API service dynamically to avoid circular dependencies
       const apiModule = await import('../services/api');

@@ -3,6 +3,20 @@ import { User, Event, MediaItem, GuestbookEntry, Comment, Vendor } from '../type
 // @ts-ignore
 const API_URL = import.meta.env.VITE_API_URL || (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3001');
 
+export const handleApiRequest = async <T = any>(path: string, init: RequestInit = {}): Promise<T> => {
+    const res = await fetch(`${API_URL}${path}`, init);
+    if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`API request failed (${res.status}): ${text}`);
+    }
+    try {
+        return await res.json();
+    } catch {
+        // @ts-ignore
+        return null;
+    }
+};
+
 const getAuthHeaders = () => {
     const token = localStorage.getItem('snapify_token');
     return token ? { 'Authorization': `Bearer ${token}` } : {};
@@ -10,6 +24,15 @@ const getAuthHeaders = () => {
 
 export const api = {
     // ... existing methods (User, Auth, etc.) ...
+    fetchUser: async (id: string): Promise<User | undefined> => {
+        try {
+            const users = await api.fetchUsers();
+            return users.find(u => u.id === id);
+        } catch {
+            return undefined;
+        }
+    },
+
     fetchUsers: async (): Promise<User[]> => {
         const res = await fetch(`${API_URL}/api/users`, { headers: { ...getAuthHeaders() } });
         return res.json();
@@ -106,6 +129,52 @@ export const api = {
             headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
             body: JSON.stringify(event)
         });
+    },
+
+    // --- FEEDBACK & SUPPORT (admin stubs) ---
+    submitFeedback: async (payload: any): Promise<{ success: boolean; feedbackId?: string }> => {
+        return handleApiRequest('/api/feedback', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+            body: JSON.stringify(payload)
+        });
+    },
+    getAllFeedback: async (): Promise<any[]> => {
+        return handleApiRequest('/api/feedback', { headers: { ...getAuthHeaders() } }) || [];
+    },
+    updateFeedbackStatus: async (id: string, status: string): Promise<void> => {
+        await handleApiRequest(`/api/feedback/${id}/status`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+            body: JSON.stringify({ status })
+        });
+    },
+    getSupportMessages: async (): Promise<any[]> => {
+        return handleApiRequest('/api/support/messages', { headers: { ...getAuthHeaders() } });
+    },
+    sendAdminReply: async (messageId: string, reply: string): Promise<void> => {
+        await handleApiRequest('/api/support/reply', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+            body: JSON.stringify({ messageId, reply })
+        });
+    },
+    markMessageAsRead: async (messageId: string): Promise<void> => {
+        await handleApiRequest(`/api/support/messages/${messageId}/read`, {
+            method: 'POST',
+            headers: { ...getAuthHeaders() }
+        });
+    },
+
+    // --- SYSTEM MAINTENANCE (stubs) ---
+    getSystemStorage: async (): Promise<any> => {
+        return handleApiRequest('/api/system/storage', { headers: { ...getAuthHeaders() } });
+    },
+    cleanMinIOBucket: async (): Promise<{ deletedCount: number; totalSize: string }> => {
+        return handleApiRequest('/api/system/storage/clean', { method: 'POST', headers: { ...getAuthHeaders() } });
+    },
+    clearUsersDatabase: async (): Promise<{ adminPreserved: boolean; totalDeleted: number }> => {
+        return handleApiRequest('/api/system/users/clear', { method: 'POST', headers: { ...getAuthHeaders() } });
     },
 
     deleteEvent: async (id: string): Promise<void> => {

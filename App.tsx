@@ -74,9 +74,10 @@ const safeRemoveItem = (key: string) => {
 };
 
 declare global {
-    interface Window {
-        google: any;
-    }
+  interface Window {
+    google?: any;
+    googleSignInInitialized?: boolean;
+  }
 }
 
 export default function App() {
@@ -335,10 +336,10 @@ export default function App() {
                       try {
                           const usersData = await api.fetchUsers();
                           // FIXED: Validate users array to prevent filter/map errors
-                          const validatedUsers = Array.isArray(usersData) ? usersData.map(u => ({
+                          const validatedUsers: User[] = Array.isArray(usersData) ? usersData.map(u => ({
                               ...u,
-                              role: u.role || 'USER',
-                              tier: u.tier || 'FREE',
+                              role: (u.role as UserRole) || UserRole.USER,
+                              tier: (u.tier as TierLevel) || TierLevel.FREE,
                               storageUsedMb: u.storageUsedMb || 0,
                               storageLimitMb: u.storageLimitMb || 100
                           })) : [];
@@ -498,10 +499,10 @@ export default function App() {
                }
           } else if (user.role === 'ADMIN') {
               // FIXED: Validate admin user data to prevent array operation errors
-              const validatedUser = {
+              const validatedUser: User = {
                   ...user,
-                  role: user.role || 'ADMIN',
-                  tier: user.tier || 'STUDIO',
+                  role: (user.role as UserRole) || UserRole.ADMIN,
+                  tier: (user.tier as TierLevel) || TierLevel.STUDIO,
                   storageUsedMb: user.storageUsedMb || 0,
                   storageLimitMb: user.storageLimitMb || -1, // Unlimited for admin
                   joinedDate: user.joinedDate || new Date().toISOString().split('T')[0]
@@ -520,10 +521,10 @@ export default function App() {
                   try {
                       const usersData = await api.fetchUsers();
                       // FIXED: Validate users array to prevent filter/map errors
-                      const validatedUsers = Array.isArray(usersData) ? usersData.map(u => ({
+                      const validatedUsers: User[] = Array.isArray(usersData) ? usersData.map(u => ({
                           ...u,
-                          role: u.role || 'USER',
-                          tier: u.tier || 'FREE',
+                          role: (u.role as UserRole) || UserRole.USER,
+                          tier: (u.tier as TierLevel) || TierLevel.FREE,
                           storageUsedMb: u.storageUsedMb || 0,
                           storageLimitMb: u.storageLimitMb || 100
                       })) : [];
@@ -1092,7 +1093,6 @@ export default function App() {
 
                     {(view === 'event' || view === 'live') && (
                       <Suspense fallback={<EventSkeleton />}>
-                        {console.log('Rendering EventView:', { view, hasActiveEvent: !!activeEvent, activeEventTitle: activeEvent?.title, currentUser: !!currentUser, guestName })}
                         <EventView
                           view={view as 'event' | 'live'}
                           activeEvent={activeEvent}

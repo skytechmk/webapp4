@@ -15,30 +15,7 @@ interface FeedbackTabProps {
 }
 
 export const FeedbackTab: React.FC<FeedbackTabProps> = ({ users }) => {
-    const [feedbackData, setFeedbackData] = useState<{
-        feedbackItems: Array<{
-            id: string;
-            userId: string;
-            userName: string;
-            userEmail: string;
-            rating?: number;
-            comments: string;
-            category: 'bug' | 'feature-request' | 'improvement' | 'general';
-            feature?: string;
-            source: 'landing-page' | 'beta-modal';
-            version: string;
-            submittedAt: string;
-            status: 'new' | 'reviewed' | 'resolved';
-        }>;
-        stats: {
-            totalFeedback: number;
-            newFeedback: number;
-            reviewedFeedback: number;
-            resolvedFeedback: number;
-            byCategory: Record<string, number>;
-            bySource: Record<string, number>;
-        };
-    } | null>(null);
+    const [feedbackData, setFeedbackData] = useState<any>(null);
     const [loadingFeedback, setLoadingFeedback] = useState(true);
 
     // Load feedback data

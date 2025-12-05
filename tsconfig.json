@@ -35,6 +35,11 @@
     "docs-website/**",
     "node_modules",
     "dist",
-    "dev-dist"
+    "dev-dist",
+    "**/__tests__/**",
+    "test/**",
+    "testing/**",
+    "**/*.test.ts",
+    "**/*.test.tsx"
   ]
 }

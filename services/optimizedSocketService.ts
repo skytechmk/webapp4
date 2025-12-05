@@ -49,8 +49,16 @@ interface ConnectionStats {
     errorCount: number;
 }
 
+// Extended Socket interface to include methods that exist at runtime
+interface ExtendedSocket extends Socket {
+    on(event: string, listener: (...args: any[]) => void): this;
+    off(event: string, listener?: (...args: any[]) => void): this;
+    removeListener(event: string, listener: (...args: any[]) => void): this;
+    removeAllListeners(event?: string): this;
+}
+
 class OptimizedSocketService {
-    private socket: Socket | null = null;
+    private socket: ExtendedSocket | null = null;
     private currentEventId: string | null = null;
     private eventHandlers: Map<string, ((data: any) => void)[]> = new Map();
     private pendingBatches: Map<string, SocketEventBatch[]> = new Map();
@@ -90,7 +98,7 @@ class OptimizedSocketService {
 
         this.logConnectionStats(`Connecting to ${API_URL} (mobile: ${isMobile})`);
 
-        this.socket = io(API_URL, this.getSocketOptions(isMobile));
+        this.socket = io(API_URL, this.getSocketOptions(isMobile)) as ExtendedSocket;
 
         this.setupSocketEventListeners();
         this.setupPerformanceMonitoring();
@@ -133,7 +141,7 @@ class OptimizedSocketService {
                 if (this.socket.connected) {
                     this.socket.disconnect();
                 }
-                this.socket.off();
+                this.socket.removeAllListeners();
                 this.socket = null;
                 this.logConnectionStats('Cleaned up existing socket connection');
             } catch (error) {
@@ -211,7 +219,7 @@ class OptimizedSocketService {
 
         // Add cleanup callback
         this.cleanupCallbacks.push(() => {
-            this.socket?.off(event, debouncedCallback);
+            this.socket?.removeListener(event, debouncedCallback);
         });
 
         this.logConnectionStats(`Added debounced handler for event: ${event}`);
@@ -221,9 +229,9 @@ class OptimizedSocketService {
     off(event: string, callback?: (data: any) => void) {
         if (this.socket) {
             if (callback) {
-                this.socket.off(event, callback);
+                this.socket.removeListener(event, callback);
             } else {
-                this.socket.off(event);
+                this.socket.removeAllListeners(event);
             }
         }
     }
@@ -271,7 +279,7 @@ class OptimizedSocketService {
 
         // Add cleanup callback
         this.cleanupCallbacks.push(() => {
-            this.socket?.off(event, batchedCallback);
+            this.socket?.removeListener(event, batchedCallback);
             // Process any remaining items in the batch
             this.processBatch(event);
         });
@@ -429,7 +437,7 @@ class OptimizedSocketService {
         if (this.socket) {
             try {
                 // Remove all event listeners
-                this.socket.off();
+                this.socket.removeAllListeners();
                 this.logConnectionStats(`Removed all event listeners from socket`);
             } catch (error) {
                 this.logError('Failed to remove socket event listeners', error);

@@ -7,13 +7,32 @@
 let faceApiLoaded = false;
 let faceApiLoadError = null;
 
-// List of fallback CDN URLs for face-api with timeout handling
+// CRITICAL FIX: Set up environment for FaceAPI before loading
+// FaceAPI needs to detect it's in a browser environment
+// In Web Workers, we need to explicitly set these globals
+if (typeof self !== 'undefined' && !self.document) {
+    // Create minimal document-like object for FaceAPI environment detection
+    self.document = {
+        createElement: () => ({}),
+        documentElement: { style: {} }
+    };
+}
+
+// Set up navigator if not present (for environment detection)
+if (typeof self !== 'undefined' && !self.navigator) {
+    self.navigator = {
+        userAgent: 'Mozilla/5.0 (Worker)',
+        platform: 'Worker'
+    };
+}
+
+// Enhanced FaceAPI loading with multiple CDN fallbacks and error handling
 const FACE_API_CDNS = [
     'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.min.js',
     'https://unpkg.com/@vladmandic/face-api/dist/face-api.min.js',
     'https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js',
-    // Additional fallback URLs
-    'https://cdnjs.cloudflare.com/ajax/libs/face-api.js/0.22.2/face-api.min.js'
+    // Local fallback - will be served from public directory
+    '/face-api.min.js'
 ];
 
 // Try to load face-api from CDN with fallback mechanisms and timeout
@@ -96,7 +115,7 @@ async function loadFaceApiWithFallback() {
 loadFaceApiWithFallback();
 
 // Worker message handler
-self.onmessage = async function(e) {
+self.onmessage = async function (e) {
     const { imageData, operation, options, requestId } = e.data;
 
     try {

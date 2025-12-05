@@ -6,10 +6,10 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'autoUpdate', 
+      registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'masked-icon.svg'],
       devOptions: {
-        enabled: true 
+        enabled: true
       },
       manifest: {
         name: 'SnapifY - Event Sharing',
@@ -38,22 +38,23 @@ export default defineConfig({
           }
         ],
         share_target: {
-            action: "/",
-            method: "GET",
-            enctype: "application/x-www-form-urlencoded",
-            params: {
-              title: "title",
-              text: "text",
-              url: "url"
-            }
-          },
-          // Add deep linking support for QR codes
-          scope: '/',
-          start_url: '/',
-          display_override: ['window-controls-overlay', 'standalone', 'minimal-ui']
+          action: "/",
+          method: "GET",
+          enctype: "application/x-www-form-urlencoded",
+          params: {
+            title: "title",
+            text: "text",
+            url: "url"
+          }
+        },
+        // Add deep linking support for QR codes
+        scope: '/',
+        start_url: '/',
+        display_override: ['window-controls-overlay', 'standalone', 'minimal-ui']
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
+        maximumFileSizeToCacheInBytes: 10 * 1024 * 1024, // 10 MB limit
         skipWaiting: true,
         clientsClaim: true,
         cleanupOutdatedCaches: true, // FORCE CLEANUP
@@ -101,11 +102,11 @@ export default defineConfig({
     outDir: 'dist',
     sourcemap: false,
     rollupOptions: {
-        output: {
-            manualChunks: {
-                vendor: ['react', 'react-dom', 'socket.io-client', 'lucide-react', 'recharts']
-            }
+      output: {
+        manualChunks: {
+          vendor: ['react', 'react-dom', 'socket.io-client', 'lucide-react', 'recharts']
         }
+      }
     }
   }
 });
