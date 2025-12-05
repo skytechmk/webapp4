@@ -108,7 +108,7 @@ export const getUploadStatus = (req, res) => {
 export const deleteMedia = (req, res) => {
     db.get(`SELECT media.url, media.previewUrl, events.hostId, media.uploaderId FROM media JOIN events ON media.eventId = events.id WHERE media.id = ?`, [req.params.id], async (err, row) => {
         if (err || !row) return res.status(404).json({ error: "Not found" });
-        if (req.user.role !== 'ADMIN' && row.hostId !== req.user.id && row.uploaderId !== req.user.id) return res.sendStatus(403);
+        if (req.user.role !== 'ADMIN' && row.hostId !== req.user.id && row.uploaderId !== req.user.id) return res.status(403).json({ error: "Forbidden", status: 403 });
         try {
             if (row.url) await deleteFromS3(row.url);
             if (row.previewUrl) await deleteFromS3(row.previewUrl);

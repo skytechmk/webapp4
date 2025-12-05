@@ -1,19 +1,20 @@
-import React from 'react';
-import ReactDOM from 'react-dom/client';
+import * as React from 'react';
+import { createRoot } from 'react-dom/client';
 import * as Sentry from '@sentry/react';
+import { browserTracingIntegration, replayIntegration } from '@sentry/react';
 import './src/index.css';
 import App from './App';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { reportWebVitals } from './utils/performance';
 
-const sentryDsn = process.env.VITE_SENTRY_DSN;
+const sentryDsn = import.meta.env.VITE_SENTRY_DSN;
 if (sentryDsn && sentryDsn !== 'https://placeholder-dsn@sentry.io/placeholder') {
   Sentry.init({
     dsn: sentryDsn,
     environment: import.meta.env.PROD ? 'production' : 'development',
     integrations: [
-      Sentry.browserTracingIntegration(),
-      Sentry.replayIntegration(),
+      browserTracingIntegration(),
+      replayIntegration(),
     ],
     tracesSampleRate: 1.0,
     replaysSessionSampleRate: 0.1,
@@ -26,7 +27,7 @@ if (!rootElement) {
   throw new Error("Could not find root element to mount to");
 }
 
-const root = ReactDOM.createRoot(rootElement);
+const root = createRoot(rootElement);
 
 // Production performance monitoring
 window.addEventListener('load', () => {

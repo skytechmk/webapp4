@@ -48,17 +48,25 @@ export class ImageProcessingWorker {
             );
 
             this.worker.onmessage = (e: MessageEvent) => {
-                const data = e.data as ImageProcessingResult;
-                const requestId = data.requestId;
+                const data = e.data;
+
+                // Handle worker error messages
+                if (data.type === 'workerError' || data.type === 'workerWarning' || data.type === 'workerStatus') {
+                    this.handleWorkerErrorMessage(data);
+                    return;
+                }
+
+                const typedData = data as ImageProcessingResult;
+                const requestId = typedData.requestId;
 
                 if (requestId !== undefined && this.pendingRequests.has(requestId)) {
                     const { resolve, reject } = this.pendingRequests.get(requestId)!;
                     this.pendingRequests.delete(requestId);
 
-                    if (data.success) {
-                        resolve(data.result);
+                    if (typedData.success) {
+                        resolve(typedData.result);
                     } else {
-                        reject(new Error(data.error || 'Image processing failed'));
+                        reject(new Error(typedData.error || 'Image processing failed'));
                     }
                 }
             };
@@ -68,6 +76,38 @@ export class ImageProcessingWorker {
             };
         } catch (error) {
             console.error('Failed to initialize image processing worker:', error);
+        }
+    }
+
+    private handleWorkerErrorMessage(data: any): void {
+        const errorMessage = `[Worker ${data.type}] ${data.error || data.message || 'Unknown worker error'}`;
+
+        // Log the error with appropriate severity
+        if (data.severity === 'critical') {
+            console.error(errorMessage);
+        } else if (data.severity === 'warning') {
+            console.warn(errorMessage);
+        } else {
+            console.info(errorMessage);
+        }
+
+        // Dispatch event for global error handling
+        const errorEvent = new CustomEvent('workerError', {
+            detail: {
+                type: data.type,
+                error: data.error,
+                message: data.message,
+                severity: data.severity,
+                source: data.source,
+                timestamp: data.timestamp || Date.now()
+            },
+            bubbles: true,
+            cancelable: true
+        });
+
+        // Try to dispatch to window if available
+        if (typeof window !== 'undefined') {
+            window.dispatchEvent(errorEvent);
         }
     }
 

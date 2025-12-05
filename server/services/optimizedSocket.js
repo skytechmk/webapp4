@@ -132,6 +132,12 @@ export const initOptimizedSocket = (server) => {
             try {
                 socket.join(eventId);
                 console.log(`📍 User joined event ${eventId}`);
+
+                // Also join user-specific room for private messages
+                if (currentUser) {
+                    socket.join(`user:${currentUser.id}`);
+                }
+
                 callback?.({ success: true, eventId });
 
                 // Update last activity
@@ -141,6 +147,72 @@ export const initOptimizedSocket = (server) => {
             } catch (error) {
                 console.error(`Failed to join event ${eventId}:`, error);
                 callback?.({ success: false, error: 'Failed to join event' });
+            }
+        });
+
+        // Leave event/room
+        socket.on('leave_event', (eventId, callback) => {
+            try {
+                if (eventId) {
+                    socket.leave(eventId);
+                    console.log(`📍 User left event ${eventId}`);
+                }
+                callback?.({ success: true });
+            } catch (error) {
+                console.error(`Failed to leave event ${eventId}:`, error);
+                callback?.({ success: false, error: 'Failed to leave event' });
+            }
+        });
+
+        // Join custom room
+        socket.on('join_room', (roomId, callback) => {
+            if (!roomId || typeof roomId !== 'string') {
+                callback?.({ success: false, error: 'Invalid room ID' });
+                return;
+            }
+
+            try {
+                socket.join(roomId);
+                console.log(`🏠 User joined room ${roomId}`);
+                callback?.({ success: true, roomId });
+
+                // Update last activity
+                lastActivity = Date.now();
+                updateConnectionActivity(connectionId);
+
+            } catch (error) {
+                console.error(`Failed to join room ${roomId}:`, error);
+                callback?.({ success: false, error: 'Failed to join room' });
+            }
+        });
+
+        // Leave custom room
+        socket.on('leave_room', (roomId, callback) => {
+            try {
+                if (roomId) {
+                    socket.leave(roomId);
+                    console.log(`🏠 User left room ${roomId}`);
+                }
+                callback?.({ success: true });
+            } catch (error) {
+                console.error(`Failed to leave room ${roomId}:`, error);
+                callback?.({ success: false, error: 'Failed to leave room' });
+            }
+        });
+
+        // Get room information
+        socket.on('get_room_info', (roomId, callback) => {
+            try {
+                const room = io.sockets.adapter.rooms.get(roomId);
+                const roomInfo = {
+                    roomId,
+                    userCount: room ? room.size : 0,
+                    users: room ? Array.from(room) : []
+                };
+                callback?.({ success: true, roomInfo });
+            } catch (error) {
+                console.error(`Failed to get room info for ${roomId}:`, error);
+                callback?.({ success: false, error: 'Failed to get room info' });
             }
         });
 
@@ -214,6 +286,180 @@ export const initOptimizedSocket = (server) => {
                 uptime: process.uptime(),
                 memoryUsage: process.memoryUsage()
             });
+        });
+
+        // Client ping/pong for connection health monitoring
+        socket.on('ping', (data) => {
+            const clientTimestamp = data?.timestamp || Date.now();
+            const serverTimestamp = Date.now();
+            const latency = serverTimestamp - clientTimestamp;
+
+            // Respond with pong containing latency information
+            socket.emit('pong', {
+                latency,
+                serverTime: serverTimestamp,
+                clientTime: clientTimestamp
+            });
+
+            // Update activity
+            lastActivity = Date.now();
+            updateConnectionActivity(connectionId);
+        });
+
+        // Real-time event handling
+        socket.on('send_notification', (data, callback) => {
+            if (!currentUser) {
+                callback?.({ success: false, error: 'Not authenticated' });
+                return;
+            }
+
+            try {
+                const notification = {
+                    id: `notif_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+                    from: currentUser.id,
+                    to: data.to,
+                    type: data.type || 'info',
+                    title: data.title,
+                    message: data.message,
+                    data: data.data || {},
+                    timestamp: Date.now()
+                };
+
+                // Send to specific user if online
+                if (data.to) {
+                    io.to(`user:${data.to}`).emit('notification', notification);
+                } else {
+                    // Broadcast to all if no specific recipient
+                    io.emit('notification', notification);
+                }
+
+                callback?.({ success: true, notificationId: notification.id });
+            } catch (error) {
+                console.error('Failed to send notification:', error);
+                callback?.({ success: false, error: 'Failed to send notification' });
+            }
+        });
+
+        // Chat messaging
+        socket.on('send_message', (data, callback) => {
+            if (!currentUser) {
+                callback?.({ success: false, error: 'Not authenticated' });
+                return;
+            }
+
+            try {
+                const message = {
+                    id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+                    from: currentUser.id,
+                    fromName: currentUser.name,
+                    to: data.to,
+                    room: data.room,
+                    type: data.type || 'text',
+                    content: data.content,
+                    timestamp: Date.now(),
+                    metadata: data.metadata || {}
+                };
+
+                if (data.room) {
+                    // Room message
+                    socket.to(data.room).emit('message', message);
+                } else if (data.to) {
+                    // Private message
+                    io.to(`user:${data.to}`).emit('message', message);
+                }
+
+                callback?.({ success: true, messageId: message.id });
+            } catch (error) {
+                console.error('Failed to send message:', error);
+                callback?.({ success: false, error: 'Failed to send message' });
+            }
+        });
+
+        // Live updates (generic event broadcasting)
+        socket.on('broadcast_update', (data, callback) => {
+            if (!currentUser) {
+                callback?.({ success: false, error: 'Not authenticated' });
+                return;
+            }
+
+            try {
+                const update = {
+                    id: `update_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+                    type: data.type,
+                    data: data.data,
+                    from: currentUser.id,
+                    timestamp: Date.now()
+                };
+
+                if (data.room) {
+                    socket.to(data.room).emit('live_update', update);
+                } else {
+                    io.emit('live_update', update);
+                }
+
+                callback?.({ success: true, updateId: update.id });
+            } catch (error) {
+                console.error('Failed to broadcast update:', error);
+                callback?.({ success: false, error: 'Failed to broadcast update' });
+            }
+        });
+
+        // User presence updates
+        socket.on('update_presence', (data, callback) => {
+            if (!currentUser) {
+                callback?.({ success: false, error: 'Not authenticated' });
+                return;
+            }
+
+            try {
+                const presence = {
+                    userId: currentUser.id,
+                    status: data.status || 'online',
+                    activity: data.activity,
+                    lastSeen: Date.now()
+                };
+
+                // Update user presence in cache
+                updateUserPresence(currentUser.id, data.status === 'online', connectionId);
+
+                // Broadcast presence update to relevant users
+                io.emit('presence_update', presence);
+
+                callback?.({ success: true });
+            } catch (error) {
+                console.error('Failed to update presence:', error);
+                callback?.({ success: false, error: 'Failed to update presence' });
+            }
+        });
+
+        // Typing indicators
+        socket.on('typing_start', (data) => {
+            if (!currentUser) return;
+
+            const typingData = {
+                userId: currentUser.id,
+                userName: currentUser.name,
+                room: data.room,
+                timestamp: Date.now()
+            };
+
+            if (data.room) {
+                socket.to(data.room).emit('user_typing', typingData);
+            }
+        });
+
+        socket.on('typing_stop', (data) => {
+            if (!currentUser) return;
+
+            const typingData = {
+                userId: currentUser.id,
+                room: data.room,
+                timestamp: Date.now()
+            };
+
+            if (data.room) {
+                socket.to(data.room).emit('user_stopped_typing', typingData);
+            }
         });
     });
 

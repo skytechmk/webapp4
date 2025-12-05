@@ -46,9 +46,10 @@ app.post('/api/admin/reset', async (req, res) => {
 });
 
 // Start Server
-server.listen(config.PORT, () => {
-    logger.info(`Server running on port ${config.PORT}`, {
+server.listen(config.PORT, '0.0.0.0', () => {
+    logger.info(`Server running on port ${config.PORT} and listening on all interfaces`, {
         port: config.PORT,
+        host: '0.0.0.0',
         environment: config.NODE_ENV,
         redisEnabled: !!process.env.REDIS_HOST,
         sentryEnabled: !!config.SENTRY_DSN

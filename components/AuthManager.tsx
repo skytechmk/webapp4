@@ -7,6 +7,7 @@ import { validateGuestName, sanitizeInput, validateEmail, validatePassword, vali
 import { socketService } from '../services/socketService';
 import { clearDeviceFingerprint } from '../utils/deviceFingerprint';
 import { TIER_CONFIG, getTierConfigForUser, getTierConfig } from '../types';
+import { safePostMessage, handlePostMessageError, postMessageFallbacks } from '../utils/postMessageUtils';
 
 interface AuthManagerReturnType {
     currentUser: User | null;
@@ -49,10 +50,51 @@ interface AuthManagerProps {
 
 declare global {
     interface Window {
-        google: any;
+        google?: any;
         googleSignInInitialized?: boolean;
     }
 }
+
+// GSI Initialization Validation Utility
+export const validateGsiInitialization = (): { isValid: boolean; error?: string } => {
+    if (!window.google) {
+        return {
+            isValid: false,
+            error: 'Google API not loaded'
+        };
+    }
+
+    if (!window.google.accounts || !window.google.accounts.id) {
+        return {
+            isValid: false,
+            error: 'Google Identity Services not available'
+        };
+    }
+
+    if (!window.googleSignInInitialized) {
+        return {
+            isValid: false,
+            error: 'Google Sign-In not initialized - call initialize() first'
+        };
+    }
+
+    return { isValid: true };
+};
+
+// GSI Error Handler
+export const handleGsiError = (error: any, context: string) => {
+    console.error(`[GSI_ERROR] ${context}:`, error);
+
+    // Dispatch error event for global handling
+    const errorEvent = new CustomEvent('gsiError', {
+        detail: {
+            error: error,
+            context: context,
+            timestamp: new Date().toISOString()
+        }
+    });
+    window.dispatchEvent(errorEvent);
+};
 
 export const AuthManager: React.FC<AuthManagerProps> = ({
     currentUser,
@@ -103,15 +145,39 @@ export const AuthManager: React.FC<AuthManagerProps> = ({
         }
     }, [currentUser?.id, setFetchedHostUsers]);
 
-    // Handle Google response
+    // Handle Google response with postMessage error handling
     const handleGoogleResponse = async (response: any) => {
         try {
             const credential = response.credential;
+
+            // Wrap API call with postMessage error handling
             try {
                 const res = await api.googleLogin(credential);
                 await finalizeLogin(res.user, res.token);
-            } catch (e) { setAuthError("Authentication failed"); }
-        } catch (error) { setAuthError(t('authErrorInvalid')); }
+            } catch (e) {
+                // Check if this is a postMessage-related error
+                if (e instanceof Error && (e.message.includes('postMessage') || e.message.includes('Cross-Origin-Opener-Policy'))) {
+                    console.error('PostMessage error during Google authentication:', e);
+
+                    // Handle the postMessage error with fallback
+                    handlePostMessageError(
+                        {
+                            type: 'BLOCKED_BY_COOP',
+                            message: 'Google authentication postMessage blocked',
+                            name: 'PostMessageError'
+                        } as any,
+                        'Google Authentication',
+                        postMessageFallbacks.googleSignIn
+                    );
+
+                    setAuthError("Google authentication blocked by security policy. Please try again.");
+                } else {
+                    setAuthError("Authentication failed");
+                }
+            }
+        } catch (error) {
+            setAuthError(t('authErrorInvalid'));
+        }
     };
 
     // Finalize login process
@@ -259,23 +325,69 @@ export const AuthManager: React.FC<AuthManagerProps> = ({
     // Initialize Google Sign-In
     useEffect(() => {
         const initGoogle = () => {
-            if (window.google && process.env.VITE_GOOGLE_CLIENT_ID && !window.googleSignInInitialized) {
-                try {
-                    window.google.accounts.id.initialize({
-                        client_id: process.env.VITE_GOOGLE_CLIENT_ID,
-                        callback: handleGoogleResponse
-                    });
-                    window.googleSignInInitialized = true;
-                } catch (e) {
-                    console.warn('Google Sign-In initialization failed:', e);
+            // Validate initialization prerequisites
+            const validation = validateGsiInitialization();
+
+            if (!validation.isValid) {
+                if (validation.error === 'Google API not loaded') {
+                    console.warn('Google API not loaded yet, waiting...');
+                    return;
                 }
+                handleGsiError(validation.error, 'Initialization validation failed');
+                return;
+            }
+
+            if (!process.env.VITE_GOOGLE_CLIENT_ID) {
+                handleGsiError('Missing Google Client ID', 'Configuration error');
+                return;
+            }
+
+            if (window.googleSignInInitialized) {
+                console.log('Google Sign-In already initialized');
+                return;
+            }
+
+            try {
+                // Validate that we can call initialize
+                if (typeof window.google.accounts.id.initialize !== 'function') {
+                    throw new Error('Google Sign-In initialize method not available');
+                }
+
+                // Initialize Google Sign-In client
+                window.google.accounts.id.initialize({
+                    client_id: process.env.VITE_GOOGLE_CLIENT_ID,
+                    callback: handleGoogleResponse
+                });
+
+                // Validate initialization was successful
+                const postInitValidation = validateGsiInitialization();
+                if (!postInitValidation.isValid) {
+                    throw new Error(`Initialization failed: ${postInitValidation.error}`);
+                }
+
+                // Mark initialization as complete
+                window.googleSignInInitialized = true;
+
+                // Dispatch event to notify that GSI is ready
+                const event = new CustomEvent('gsiInitialized', {
+                    detail: {
+                        initialized: true,
+                        timestamp: new Date().toISOString()
+                    }
+                });
+                window.dispatchEvent(event);
+
+                console.log('Google Sign-In initialized successfully');
+            } catch (e) {
+                handleGsiError(e, 'Google Sign-In initialization failed');
             }
         };
 
         let googleInitInterval: NodeJS.Timeout | null = null;
 
-        if (window.google) initGoogle();
-        else {
+        if (window.google) {
+            initGoogle();
+        } else {
             googleInitInterval = setInterval(() => {
                 if (window.google) {
                     initGoogle();
@@ -289,6 +401,7 @@ export const AuthManager: React.FC<AuthManagerProps> = ({
                 if (googleInitInterval) {
                     clearInterval(googleInitInterval);
                     googleInitInterval = null;
+                    handleGsiError('Google Sign-In script failed to load within timeout', 'Script load timeout');
                 }
             }, 15000);
         }
@@ -299,7 +412,7 @@ export const AuthManager: React.FC<AuthManagerProps> = ({
                 clearInterval(googleInitInterval);
             }
         };
-    }, []);
+    }, [handleGoogleResponse]);
 
     // Socket.IO authentication and event handling
     useEffect(() => {

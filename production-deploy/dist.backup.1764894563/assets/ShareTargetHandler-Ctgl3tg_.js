@@ -1,0 +1,2 @@
+import{R as c}from"./libs-CBAR_Xud.js";import"./vendor-BSeQcPOp.js";const{useEffect:i}=c,f=({onShareReceive:e})=>(i(()=>{const t=new URLSearchParams(window.location.search),n=t.get("title"),o=t.get("text"),r=t.get("url");if(n||o||r){const a=[n,o,r].filter(Boolean).join(`
+`);if(a){e(a);const s=window.location.pathname;window.history.replaceState({},"",s)}}},[e]),null);export{f as ShareTargetHandler};

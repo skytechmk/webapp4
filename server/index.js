@@ -4,7 +4,7 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { config } from './config/env.js';
 import { initDb } from './config/db.js';
-import { initSocket } from './services/socket.js';
+import { initOptimizedSocket } from './services/optimizedSocket.js';
 import { apiGateway } from './services/apiGateway.js';
 import { logger } from './services/loggerService.js';
 import { monitoring } from './services/monitoringService.js';
@@ -27,7 +27,7 @@ const app = apiGateway.getApp();
 const server = http.createServer(app);
 
 // Initialize Socket.io
-initSocket(server);
+initOptimizedSocket(server);
 
 // Trust proxy - required when behind nginx
 app.set('trust proxy', true);

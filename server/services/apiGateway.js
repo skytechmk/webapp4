@@ -21,7 +21,7 @@ class ApiGateway {
             res.setHeader('X-XSS-Protection', '1; mode=block');
 
             // CORS and COOP headers to prevent postMessage blocking
-            res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
+            res.setHeader('Cross-Origin-Opener-Policy', 'unsafe-none');
             res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
             res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
 

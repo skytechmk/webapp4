@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="jest tests" tests="24" failures="1" errors="0" time="1.554">
+  <testsuite name="BetaTestingManager" errors="0" failures="1" skipped="0" timestamp="2025-12-05T00:14:39" time="0.201" tests="11">
+    <testcase classname="BetaTestingManager getCurrentVersion should return beta 2.2 for web platform" name="BetaTestingManager getCurrentVersion should return beta 2.2 for web platform" time="0.002">
+    </testcase>
+    <testcase classname="BetaTestingManager getCurrentVersion should return beta 2.2-native for native platforms" name="BetaTestingManager getCurrentVersion should return beta 2.2-native for native platforms" time="0.001">
+    </testcase>
+    <testcase classname="BetaTestingManager hasBetaAccess should return true for admin users" name="BetaTestingManager hasBetaAccess should return true for admin users" time="0.001">
+    </testcase>
+    <testcase classname="BetaTestingManager hasBetaAccess should return false when beta testing is disabled" name="BetaTestingManager hasBetaAccess should return false when beta testing is disabled" time="0.002">
+      <failure>Error: expect(received).toBe(expected) // Object.is equality
+
+Expected: false
+Received: true
+    at Object.&lt;anonymous&gt; (/var/www/snapify/lib/__tests__/beta-testing.test.ts:64:25)
+    at Promise.finally.completed (/var/www/snapify/node_modules/jest-config/node_modules/jest-circus/build/jestAdapterInit.js:1557:28)
+    at new Promise (&lt;anonymous&gt;)
+    at callAsyncCircusFn (/var/www/snapify/node_modules/jest-config/node_modules/jest-circus/build/jestAdapterInit.js:1497:10)
+    at _callCircusTest (/var/www/snapify/node_modules/jest-config/node_modules/jest-circus/build/jestAdapterInit.js:1007:40)
+    at processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at _runTest (/var/www/snapify/node_modules/jest-config/node_modules/jest-circus/build/jestAdapterInit.js:947:3)
+    at /var/www/snapify/node_modules/jest-config/node_modules/jest-circus/build/jestAdapterInit.js:849:7
+    at _runTestsForDescribeBlock (/var/www/snapify/node_modules/jest-config/node_modules/jest-circus/build/jestAdapterInit.js:862:11)
+    at _runTestsForDescribeBlock (/var/www/snapify/node_modules/jest-config/node_modules/jest-circus/build/jestAdapterInit.js:857:11)
+    at _runTestsForDescribeBlock (/var/www/snapify/node_modules/jest-config/node_modules/jest-circus/build/jestAdapterInit.js:857:11)
+    at run (/var/www/snapify/node_modules/jest-config/node_modules/jest-circus/build/jestAdapterInit.js:761:3)
+    at runAndTransformResultsToJestFormat (/var/www/snapify/node_modules/jest-config/node_modules/jest-circus/build/jestAdapterInit.js:1918:21)
+    at jestAdapter (/var/www/snapify/node_modules/jest-config/node_modules/jest-circus/build/runner.js:101:19)
+    at runTestInternal (/var/www/snapify/node_modules/jest-runner/build/index.js:275:16)
+    at runTest (/var/www/snapify/node_modules/jest-runner/build/index.js:343:7)</failure>
+    </testcase>
+    <testcase classname="BetaTestingManager isFeatureEnabled should return true for enabled features with correct permissions" name="BetaTestingManager isFeatureEnabled should return true for enabled features with correct permissions" time="0.001">
+    </testcase>
+    <testcase classname="BetaTestingManager isFeatureEnabled should return false for disabled features" name="BetaTestingManager isFeatureEnabled should return false for disabled features" time="0.001">
+    </testcase>
+    <testcase classname="BetaTestingManager isFeatureEnabled should return false for features requiring auth when user is null" name="BetaTestingManager isFeatureEnabled should return false for features requiring auth when user is null" time="0">
+    </testcase>
+    <testcase classname="BetaTestingManager grantBetaAccess should grant beta access to user" name="BetaTestingManager grantBetaAccess should grant beta access to user" time="0.001">
+    </testcase>
+    <testcase classname="BetaTestingManager validateBetaAccessCode should validate correct access code" name="BetaTestingManager validateBetaAccessCode should validate correct access code" time="0">
+    </testcase>
+    <testcase classname="BetaTestingManager validateBetaAccessCode should reject incorrect access code" name="BetaTestingManager validateBetaAccessCode should reject incorrect access code" time="0">
+    </testcase>
+    <testcase classname="BetaTestingManager getBetaStats should return beta statistics" name="BetaTestingManager getBetaStats should return beta statistics" time="0.001">
+    </testcase>
+  </testsuite>
+  <testsuite name="Navigation Component" errors="0" failures="0" skipped="0" timestamp="2025-12-05T00:14:40" time="0.222" tests="4">
+    <testcase classname="Navigation Component renders navigation for guest user" name="Navigation Component renders navigation for guest user" time="0.027">
+    </testcase>
+    <testcase classname="Navigation Component renders navigation for logged in user" name="Navigation Component renders navigation for logged in user" time="0.008">
+    </testcase>
+    <testcase classname="Navigation Component renders admin navigation for admin user" name="Navigation Component renders admin navigation for admin user" time="0.008">
+    </testcase>
+    <testcase classname="Navigation Component shows guest name when available" name="Navigation Component shows guest name when available" time="0.004">
+    </testcase>
+  </testsuite>
+  <testsuite name="Google Sign-In Initialization Validation" errors="0" failures="0" skipped="0" timestamp="2025-12-05T00:14:40" time="0.133" tests="9">
+    <testcase classname="Google Sign-In Initialization Validation validateGsiInitialization should return invalid when Google API is not loaded" name="Google Sign-In Initialization Validation validateGsiInitialization should return invalid when Google API is not loaded" time="0.002">
+    </testcase>
+    <testcase classname="Google Sign-In Initialization Validation validateGsiInitialization should return invalid when Google Identity Services are not available" name="Google Sign-In Initialization Validation validateGsiInitialization should return invalid when Google Identity Services are not available" time="0.001">
+    </testcase>
+    <testcase classname="Google Sign-In Initialization Validation validateGsiInitialization should return invalid when GSI is not initialized" name="Google Sign-In Initialization Validation validateGsiInitialization should return invalid when GSI is not initialized" time="0">
+    </testcase>
+    <testcase classname="Google Sign-In Initialization Validation validateGsiInitialization should return valid when all conditions are met" name="Google Sign-In Initialization Validation validateGsiInitialization should return valid when all conditions are met" time="0.001">
+    </testcase>
+    <testcase classname="Google Sign-In Initialization Validation handleGsiError should dispatch error event with proper details" name="Google Sign-In Initialization Validation handleGsiError should dispatch error event with proper details" time="0.029">
+    </testcase>
+    <testcase classname="Google Sign-In Initialization Validation Initialization Sequence should prevent button rendering before initialization" name="Google Sign-In Initialization Validation Initialization Sequence should prevent button rendering before initialization" time="0.001">
+    </testcase>
+    <testcase classname="Google Sign-In Initialization Validation Initialization Sequence should allow button rendering after successful initialization" name="Google Sign-In Initialization Validation Initialization Sequence should allow button rendering after successful initialization" time="0">
+    </testcase>
+    <testcase classname="Google Sign-In Initialization Validation Initialization Sequence should handle initialization errors gracefully" name="Google Sign-In Initialization Validation Initialization Sequence should handle initialization errors gracefully" time="0.002">
+    </testcase>
+    <testcase classname="Google Sign-In Initialization Validation Event-Based Initialization Flow should respond to gsiInitialized event" name="Google Sign-In Initialization Validation Event-Based Initialization Flow should respond to gsiInitialized event" time="0.001">
+    </testcase>
+  </testsuite>
+</testsuites>

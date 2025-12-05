@@ -2,7 +2,7 @@ import { db } from '../config/db.js';
 import { getIo } from '../services/socket.js';
 
 export const getUsers = (req, res) => {
-    if (req.user.role !== 'ADMIN') return res.sendStatus(403);
+    if (req.user.role !== 'ADMIN') return res.status(403).json({ error: "Forbidden", status: 403 });
     db.all("SELECT * FROM users", [], (err, rows) => {
         if (err) return res.status(500).json({ error: err.message });
         res.json(rows);
@@ -12,7 +12,7 @@ export const getUsers = (req, res) => {
 export const updateUser = (req, res) => {
     const isSelf = req.user.id === req.params.id;
     const isAdmin = req.user.role === 'ADMIN';
-    if (!isSelf && !isAdmin) return res.sendStatus(403);
+    if (!isSelf && !isAdmin) return res.status(403).json({ error: "Forbidden", status: 403 });
 
     const { name, email, studioName, logoUrl, watermarkOpacity, watermarkSize, watermarkPosition, watermarkOffsetX, watermarkOffsetY, role, tier, storageLimitMb } = req.body;
 
@@ -61,7 +61,7 @@ export const updateUser = (req, res) => {
 };
 
 export const upgradeUser = (req, res) => {
-    if (req.user.role !== 'ADMIN') return res.sendStatus(403);
+    if (req.user.role !== 'ADMIN') return res.status(403).json({ error: "Forbidden", status: 403 });
     const { tier } = req.body;
     db.run("UPDATE users SET tier = ? WHERE id = ?", [tier, req.params.id], function (err) {
         if (err) return res.status(500).json({ error: err.message });
@@ -81,7 +81,7 @@ export const upgradeUser = (req, res) => {
 };
 
 export const deleteUser = (req, res) => {
-    if (req.user.role !== 'ADMIN') return res.sendStatus(403);
+    if (req.user.role !== 'ADMIN') return res.status(403).json({ error: "Forbidden", status: 403 });
     db.run("DELETE FROM users WHERE id = ?", [req.params.id], (err) => {
         if (err) return res.status(500).json({ error: err.message });
         res.json({ success: true });

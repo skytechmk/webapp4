@@ -13,8 +13,22 @@ declare const self: ServiceWorkerGlobalScope;
 // Enable clients to be controlled immediately
 clientsClaim();
 
-// Precache all assets
-precacheAndRoute(self.__WB_MANIFEST);
+// Precache all assets - this will be replaced by workbox-inject-manifest
+try {
+  precacheAndRoute(self.__WB_MANIFEST);
+} catch (error) {
+  console.error('Service worker precaching failed:', error);
+  // Notify the client about precaching failure
+  self.clients.matchAll().then(clients => {
+    clients.forEach(client => {
+      client.postMessage({
+        type: 'PRECACHE_FAILED',
+        error: error.message,
+        url: 'manifest'
+      });
+    });
+  });
+}
 
 // Set up navigation route to index.html
 const navigationRoute = new NavigationRoute(
@@ -22,7 +36,7 @@ const navigationRoute = new NavigationRoute(
 );
 registerRoute(navigationRoute);
 
-// Cache API responses with NetworkFirst strategy
+// Cache API responses with NetworkFirst strategy and enhanced error handling
 registerRoute(
     ({ url }) => url.pathname.startsWith('/api/') &&
         !url.pathname.includes('/api/proxy-media') &&
@@ -41,12 +55,37 @@ registerRoute(
             new BackgroundSyncPlugin('snapify-upload-queue', {
                 maxRetentionTime: 24 * 60, // 24 hours in minutes
             }),
+            // Enhanced error handling for API failures
+            {
+                fetchDidFail: async ({ request }) => {
+                    console.error(`API request failed: ${request.url}`);
+                    // Notify clients about API failures for better UX
+                    self.clients.matchAll().then(clients => {
+                        clients.forEach(client => {
+                            client.postMessage({
+                                type: 'API_REQUEST_FAILED',
+                                url: request.url,
+                                method: request.method,
+                                timestamp: Date.now()
+                            });
+                        });
+                    });
+                    return null; // Let the request fail gracefully
+                },
+                cachedResponseWillBeUsed: async ({ cacheName, request, cachedResponse }) => {
+                    // Log when falling back to cache
+                    if (cachedResponse) {
+                        console.log(`Using cached response for: ${request.url}`);
+                    }
+                    return cachedResponse;
+                }
+            }
         ],
     }),
     'GET'
 );
 
-// Cache CDN resources with StaleWhileRevalidate
+// Cache CDN resources with StaleWhileRevalidate and enhanced error handling
 registerRoute(
     ({ url }) => url.host.includes('aistudiocdn.com') || url.host.includes('cdn.jsdelivr.net'),
     new StaleWhileRevalidate({
@@ -56,6 +95,33 @@ registerRoute(
                 maxEntries: 50,
                 maxAgeSeconds: 7 * 24 * 60 * 60, // 7 days
             }),
+            new CacheableResponsePlugin({
+                statuses: [0, 200]
+            }),
+            // Enhanced error handling for CDN failures
+            {
+                fetchDidFail: async ({ request }) => {
+                    console.warn(`CDN request failed for: ${request.url}`);
+                    // Notify the client about CDN failures
+                    self.clients.matchAll().then(clients => {
+                        clients.forEach(client => {
+                            client.postMessage({
+                                type: 'CDN_LOAD_FAILED',
+                                url: request.url,
+                                timestamp: Date.now()
+                            });
+                        });
+                    });
+                    return null; // Let the request fail gracefully
+                },
+                fetchDidSucceed: async ({ request, response }) => {
+                    // Log successful CDN loads for monitoring
+                    if (response.status === 200) {
+                        console.log(`CDN resource loaded successfully: ${request.url}`);
+                    }
+                    return response;
+                }
+            }
         ],
     })
 );
@@ -106,12 +172,91 @@ self.addEventListener('install', (event) => {
 });
 
 self.addEventListener('activate', (event) => {
-    event.waitUntil(Promise.resolve(clientsClaim()));
+    event.waitUntil(
+        Promise.resolve(clientsClaim())
+            .then(() => {
+                // Clean up old caches to prevent version mismatch issues
+                return caches.keys().then(cacheNames => {
+                    return Promise.all(
+                        cacheNames.map(cacheName => {
+                            if (cacheName !== 'workbox-precache' && cacheName !== 'snapify-api-cache' && cacheName !== 'snapify-cdn-cache' && cacheName !== 'snapify-assets-cache') {
+                                return caches.delete(cacheName);
+                            }
+                            return Promise.resolve();
+                        })
+                    );
+                });
+            })
+    );
 });
 
-// Handle messages from the client
+// Handle messages from the client with enhanced error handling
 self.addEventListener('message', (event) => {
-    if (event.data && event.data.type === 'SKIP_WAITING') {
-        self.skipWaiting();
+    try {
+        if (event.data && event.data.type === 'SKIP_WAITING') {
+            self.skipWaiting();
+        } else if (event.data && event.data.type === 'PRECACHE_FAILED') {
+            console.warn('Client reported precache failure:', event.data.url);
+            // This could trigger a service worker update if needed
+        } else if (event.data && event.data.type === 'CHECK_VERSION') {
+            // Respond with current service worker version
+            event.ports[0]?.postMessage({
+                type: 'VERSION_RESPONSE',
+                version: '2.0.0'
+            });
+        } else if (event.data && event.data.type === 'NETWORK_STATUS_CHECK') {
+            // Check network connectivity and respond
+            const isOnline = navigator.onLine;
+            event.ports[0]?.postMessage({
+                type: 'NETWORK_STATUS_RESPONSE',
+                isOnline: isOnline,
+                timestamp: Date.now()
+            });
+        } else if (event.data && event.data.type === 'FORCE_CACHE_REFRESH') {
+            // Force refresh specific caches
+            const cacheNamesToRefresh = event.data.cacheNames || ['snapify-api-cache', 'snapify-cdn-cache'];
+            Promise.all(
+                cacheNamesToRefresh.map(async (cacheName) => {
+                    const cache = await caches.open(cacheName);
+                    const requests = await cache.keys();
+                    return Promise.all(requests.map(request => cache.delete(request)));
+                })
+            ).then(() => {
+                event.ports[0]?.postMessage({
+                    type: 'CACHE_REFRESH_COMPLETE',
+                    refreshedCaches: cacheNamesToRefresh
+                });
+            }).catch(error => {
+                console.error('Cache refresh failed:', error);
+                event.ports[0]?.postMessage({
+                    type: 'CACHE_REFRESH_FAILED',
+                    error: error.message
+                });
+            });
+        }
+    } catch (error) {
+        console.error('Error handling service worker message:', error);
+        // Send error response if possible
+        if (event.ports && event.ports[0]) {
+            event.ports[0].postMessage({
+                type: 'MESSAGE_HANDLING_ERROR',
+                error: error.message
+            });
+        }
     }
+});
+
+// Add version check to prevent running outdated service workers
+const CURRENT_VERSION = '2.0.0'; // Update this when making breaking changes
+
+// Check if this is an outdated service worker by comparing with stored version
+self.addEventListener('install', (event) => {
+    console.log(`Service Worker ${CURRENT_VERSION} installing...`);
+
+    // Store the version in cache for later comparison
+    event.waitUntil(
+        caches.open('snapify-version-cache').then(cache => {
+            return cache.put('version', new Response(CURRENT_VERSION));
+        })
+    );
 });

@@ -6,7 +6,7 @@
 import * as React from 'react';
 import { useState, useEffect } from 'react';
 import { HardDrive, ShieldAlert, Trash2, AlertTriangle } from 'lucide-react';
-import { api } from '../../../services/api';
+import { api, handleApiRequest } from '../../../services/api';
 
 export const SystemTab: React.FC = () => {
     const [systemStorage, setSystemStorage] = useState<{
@@ -21,10 +21,15 @@ export const SystemTab: React.FC = () => {
         const fetchStorageData = async () => {
             setStorageLoading(true);
             try {
-                const data = await api.getSystemStorage();
+                const data = await handleApiRequest(() => api.getSystemStorage());
                 setSystemStorage(data);
             } catch (error) {
                 console.error('Failed to fetch system storage data:', error);
+                if (error.message.includes('Session expired')) {
+                    alert('⚠️ Session expired. Please log in again to access system information.');
+                } else if (error.message.includes('Unauthorized')) {
+                    alert('⚠️ Authentication required. Please log in again to access system information.');
+                }
             } finally {
                 setStorageLoading(false);
             }

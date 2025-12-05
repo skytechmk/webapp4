@@ -1,6 +1,6 @@
 declare global {
     interface Window {
-        google: any;
+        google?: any;
         googleSignInInitialized?: boolean;
     }
 }

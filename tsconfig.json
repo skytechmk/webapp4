@@ -30,5 +30,11 @@
     },
     "allowImportingTsExtensions": true,
     "noEmit": true
-  }
+  },
+  "exclude": [
+    "docs-website/**",
+    "node_modules",
+    "dist",
+    "dev-dist"
+  ]
 }

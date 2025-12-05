@@ -37,7 +37,7 @@ export default defineConfig(({ mode }) => {
       VitePWA({
         registerType: 'autoUpdate',
         includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'masked-icon.svg', 'snapify-logo.png'],
-        strategies: 'generateSW',
+        strategies: 'injectManifest',
         srcDir: 'src',
         filename: 'sw.ts',
         devOptions: {
@@ -99,73 +99,83 @@ export default defineConfig(({ mode }) => {
           handle_links: 'preferred',
         },
         workbox: {
-          maximumFileSizeToCacheInBytes: 10 * 1024 * 1024, // 10 MB limit instead of default 2 MB
-          globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
-          skipWaiting: true,
-          clientsClaim: true,
-          cleanupOutdatedCaches: true,
-          // Fix for null revision issues - ensure proper revision hashing
-          dontCacheBustURLsMatching: /\.[0-9a-f]{8}\./,
-          manifestTransforms: [
-            (manifestEntries) => {
-              return {
-                manifest: manifestEntries.map(entry => {
-                  // Ensure all entries have proper revisions
-                  if (!entry.revision) {
-                    // Generate a hash from the URL if no revision exists
-                    const url = entry.url;
-                    const hash = require('crypto').createHash('md5').update(url).digest('hex').substring(0, 8);
-                    return { ...entry, revision: hash };
-                  }
-                  return entry;
-                }),
-                warnings: []
-              };
-            }
-          ],
-          runtimeCaching: [
-            {
-              // Cache API responses (event lists, user data) but NOT media URLs
-              // Media URLs are presigned and expire in 1 hour, so caching them would cause broken images
-              urlPattern: ({ url }) => url.pathname.startsWith('/api/') &&
-                !url.pathname.includes('/api/proxy-media') &&
-                !url.pathname.includes('/api/media'),
-              handler: 'NetworkFirst',
-              options: {
-                cacheName: 'snapify-api-cache',
-                networkTimeoutSeconds: 5,
-                expiration: {
-                  maxEntries: 100,
-                  maxAgeSeconds: 60 * 60 * 24, // 24 hours for API responses
-                },
-                cacheableResponse: {
-                  statuses: [0, 200]
-                },
-                backgroundSync: {
-                  name: 'snapify-upload-queue',
-                  options: {
-                    maxRetentionTime: 24 * 60
-                  }
-                }
-              }
-            },
-            {
-              // Cache CDN resources like recharts, lucide-react, etc.
-              urlPattern: ({ url }) => url.host.includes('aistudiocdn.com') || url.host.includes('cdn.jsdelivr.net'),
-              handler: 'StaleWhileRevalidate',
-              options: {
-                cacheName: 'snapify-cdn-cache',
-                expiration: {
-                  maxEntries: 50,
-                  maxAgeSeconds: 7 * 24 * 60 * 60 // 7 days for CDN resources
-                },
-                cacheableResponse: {
-                  statuses: [0, 200]
-                }
-              }
-            }
-          ]
-        }
+           // Force local workbox bundling to avoid custom domain dependencies
+           mode: 'production',
+           sourcemap: false,
+           globDirectory: 'dist/',
+           globPatterns: [
+             '**/*.{js,css,html,ico,png,svg,woff2,webp,jpg,jpeg,gif,txt,json,woff,woff2,ttf,eot,otf}'
+           ],
+           maximumFileSizeToCacheInBytes: 10 * 1024 * 1024, // 10 MB limit instead of default 2 MB
+           dontCacheBustURLsMatching: /\.[0-9a-f]{8}\./,
+           manifestTransforms: [
+             (manifestEntries) => {
+               return {
+                 manifest: manifestEntries.map(entry => {
+                   // Ensure all entries have proper revisions
+                   if (!entry.revision) {
+                     // Generate a hash from the URL if no revision exists
+                     const url = entry.url;
+                     const hash = require('crypto').createHash('md5').update(url).digest('hex').substring(0, 8);
+                     return { ...entry, revision: hash };
+                   }
+                   return entry;
+                 }),
+                 warnings: []
+               };
+             }
+           ],
+           // Enhanced runtime caching with better error handling
+           runtimeCaching: [
+             {
+               urlPattern: ({ url }) => url.pathname.startsWith('/api/') &&
+                 !url.pathname.includes('/api/proxy-media') &&
+                 !url.pathname.includes('/api/media'),
+               handler: 'NetworkFirst',
+               options: {
+                 cacheName: 'snapify-api-cache',
+                 networkTimeoutSeconds: 5,
+                 expiration: {
+                   maxEntries: 100,
+                   maxAgeSeconds: 60 * 60 * 24,
+                 },
+                 cacheableResponse: {
+                   statuses: [0, 200]
+                 },
+                 backgroundSync: {
+                   name: 'snapify-upload-queue',
+                   options: {
+                     maxRetentionTime: 24 * 60
+                   }
+                 }
+               }
+             },
+             {
+               urlPattern: ({ url }) => url.host.includes('aistudiocdn.com') || url.host.includes('cdn.jsdelivr.net'),
+               handler: 'StaleWhileRevalidate',
+               options: {
+                 cacheName: 'snapify-cdn-cache',
+                 expiration: {
+                   maxEntries: 50,
+                   maxAgeSeconds: 7 * 24 * 60 * 60
+                 },
+                 cacheableResponse: {
+                   statuses: [0, 200]
+                 },
+                 // Add error handling for CDN failures
+                 plugins: [
+                   {
+                     fetchDidFail: async ({ request }) => {
+                       console.warn(`CDN request failed for: ${request.url}`);
+                       // Return a fallback response or null to let the request fail gracefully
+                       return null;
+                     }
+                   }
+                 ]
+               }
+             }
+           ]
+         }
       })
     ],
     build: {
@@ -215,6 +225,7 @@ export default defineConfig(({ mode }) => {
       port: 3000,
       host: '0.0.0.0',
       strictPort: true,
+      allowedHosts: ['snapify.skytech.mk'],
     }
   };
 });

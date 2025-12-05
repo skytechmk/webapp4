@@ -1,6 +1,36 @@
 import { User, Event, MediaItem, GuestbookEntry, Comment, Vendor } from '../types';
+import { trackApiError, trackError } from '../utils/monitoring';
 
-const API_URL = import.meta.env.VITE_API_URL || '';
+// Enhanced API URL configuration with environment-aware defaults
+const getApiUrl = (): string => {
+  const envUrl = import.meta.env.VITE_API_URL;
+
+  if (envUrl) {
+    // Validate the URL format
+    try {
+      new URL(envUrl);
+      return envUrl.replace(/\/$/, ''); // Remove trailing slash
+    } catch (error) {
+      console.warn('Invalid VITE_API_URL format, falling back to default:', envUrl);
+    }
+  }
+
+  // Environment-aware defaults
+  const isDev = import.meta.env.DEV;
+  const defaultUrl = isDev ? 'http://localhost:3001' : '';
+
+  if (!defaultUrl) {
+    console.error('CRITICAL: No API URL configured. Set VITE_API_URL environment variable.');
+    // Only throw in development if no URL is configured
+    if (isDev) {
+      throw new Error('API URL not configured. Contact administrator.');
+    }
+  }
+
+  return defaultUrl;
+};
+
+const API_URL = getApiUrl();
 
 // Helper function to construct proxy URLs for HTTPS access
 const buildProxyUrl = (key: string): string => {
@@ -14,15 +44,18 @@ const buildProxyUrl = (key: string): string => {
 };
 
 const getAuthHeaders = () => {
-    const token = localStorage.getItem('snapify_token');
+    // Check both token storage locations for backward compatibility
+    const token = localStorage.getItem('snapify_token') || localStorage.getItem('auth_token');
     return token ? { 'Authorization': `Bearer ${token}` } : {};
 };
 
 export const api = {
     // ... existing methods (User, Auth, etc.) ...
     fetchUsers: async (): Promise<User[]> => {
-        const res = await fetch(`${API_URL}/api/users?_t=${Date.now()}`, { headers: { ...getAuthHeaders() } });
-        return res.json();
+        return handleApiRequest(async () => {
+            const res = await fetch(`${API_URL}/api/users?_t=${Date.now()}`, { headers: { ...getAuthHeaders() } });
+            return res.json();
+        });
     },
 
     login: async (email: string, password?: string): Promise<{ token: string, user: User }> => {
@@ -45,6 +78,15 @@ export const api = {
         return res.json();
     },
 
+    refreshToken: async (): Promise<{ token: string }> => {
+        const res = await fetch(`${API_URL}/api/auth/refresh`, {
+            method: 'POST',
+            headers: { ...getAuthHeaders() }
+        });
+        if (!res.ok) throw new Error("Token refresh failed");
+        return res.json();
+    },
+
     createUser: async (user: User): Promise<{ token: string, user: User }> => {
         const res = await fetch(`${API_URL}/api/users`, {
             method: 'POST',
@@ -56,10 +98,12 @@ export const api = {
     },
 
     updateUser: async (user: User): Promise<void> => {
-        await fetch(`${API_URL}/api/users/${user.id}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-            body: JSON.stringify(user)
+        return handleApiRequest(async () => {
+            await fetch(`${API_URL}/api/users/${user.id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+                body: JSON.stringify(user)
+            });
         });
     },
     upgradeUser: async (userId: string, tier: string): Promise<void> => {
@@ -111,12 +155,14 @@ export const api = {
     },
 
     createEvent: async (event: Event): Promise<Event> => {
-        const res = await fetch(`${API_URL}/api/events`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-            body: JSON.stringify(event)
+        return handleApiRequest(async () => {
+            const res = await fetch(`${API_URL}/api/events`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+                body: JSON.stringify(event)
+            });
+            return res.json();
         });
-        return res.json();
     },
 
     updateEvent: async (event: Event): Promise<void> => {
@@ -319,9 +365,11 @@ Example structure:
         minio: { filesystem: string; size: string; used: string; available: string; usePercent: string };
         timestamp: string;
     }> => {
-        const res = await fetch(`${API_URL}/api/system/storage`, { headers: { ...getAuthHeaders() } });
-        if (!res.ok) throw new Error("Failed to get storage info");
-        return res.json();
+        return handleApiRequest(async () => {
+            const res = await fetch(`${API_URL}/api/system/storage`, { headers: { ...getAuthHeaders() } });
+            if (!res.ok) throw new Error("Failed to get storage info");
+            return res.json();
+        });
     },
 
     // --- SUPPORT CHAT ---
@@ -492,4 +540,74 @@ const pollUploadStatus = async (
     };
 
     poll();
+};
+
+// Enhanced helper function to handle 401 errors with token refresh
+export const handleApiRequest = async (requestFn: () => Promise<any>): Promise<any> => {
+    try {
+        const result = await requestFn();
+
+        // Check if the response has a 401 status (for fetch responses)
+        if (result && typeof result.status === 'number' && result.status === 401) {
+            throw new Error('Unauthorized');
+        }
+
+        return result;
+    } catch (error: any) {
+        // Check for 401 status in various error formats
+        const isUnauthorized =
+            error.message?.includes('Unauthorized') ||
+            error.message?.includes('401') ||
+            (error.response && error.response.status === 401) ||
+            (error.status === 401);
+
+        if (isUnauthorized) {
+            try {
+                console.log('Attempting token refresh due to 401 error');
+
+                // Attempt token refresh
+                const refreshResult = await api.refreshToken();
+                const newToken = refreshResult.token;
+
+                if (!newToken) {
+                    throw new Error('No token received from refresh');
+                }
+
+                // Update the token in localStorage for both storage locations
+                localStorage.setItem('snapify_token', newToken);
+                localStorage.setItem('auth_token', newToken);
+
+                console.log('Token refreshed successfully, retrying request');
+
+                // Retry the original request with the new token
+                return await requestFn();
+            } catch (refreshError: any) {
+                console.error('Token refresh failed:', refreshError);
+
+                // Track authentication error
+                trackError(`Token refresh failed: ${refreshError.message}`, 'API Token Refresh', 'high');
+
+                // Clear invalid tokens
+                localStorage.removeItem('snapify_token');
+                localStorage.removeItem('auth_token');
+
+                // Dispatch logout event for auth store
+                window.dispatchEvent(new CustomEvent('auth:logout', {
+                    detail: { reason: 'token_refresh_failed' }
+                }));
+
+                throw new Error('Session expired. Please log in again.');
+            }
+        }
+
+        // Track API errors for monitoring
+        if (error.response) {
+            trackApiError('API Request', error.response.status, error.message);
+        } else {
+            trackError(error, 'API Request', 'medium');
+        }
+
+        // Re-throw non-401 errors
+        throw error;
+    }
 };

@@ -306,7 +306,7 @@ class AuthService {
         const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
 
         if (!token) {
-            return res.status(401).json({ error: 'Access token required' });
+            return res.status(401).json({ error: 'Unauthorized', status: 401 });
         }
 
         try {
@@ -314,7 +314,7 @@ class AuthService {
             req.user = decoded;
             next();
         } catch (error) {
-            return res.status(403).json({ error: 'Invalid token' });
+            return res.status(403).json({ error: 'Forbidden', status: 403 });
         }
     }
 
@@ -322,11 +322,11 @@ class AuthService {
     requireRole(requiredRole) {
         return (req, res, next) => {
             if (!req.user) {
-                return res.status(401).json({ error: 'Authentication required' });
+                return res.status(401).json({ error: 'Unauthorized', status: 401 });
             }
 
             if (req.user.role !== requiredRole && req.user.role !== 'ADMIN') {
-                return res.status(403).json({ error: 'Insufficient permissions' });
+                return res.status(403).json({ error: 'Forbidden', status: 403 });
             }
 
             next();

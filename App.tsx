@@ -206,10 +206,7 @@ interface StudioSettingsModalProps {
   t: TranslateFn;
 }
 
-// @ts-ignore
-const env: any = (import.meta as any).env || {};
-
-const API_URL = env.DEV ? (env.VITE_API_URL || 'http://localhost:3001') : '';
+const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:3001' : '');
 
 // Using imported validation functions from utils/validation.ts
 
@@ -228,7 +225,7 @@ const safeRemoveItem = (key: string) => {
 
 declare global {
   interface Window {
-    google: any;
+    google?: any;
     googleSignInInitialized?: boolean;
   }
 }
@@ -586,15 +583,49 @@ export default function App() {
   useEffect(() => {
     loadInitialData();
     const initGoogle = () => {
-      if (window.google && env.VITE_GOOGLE_CLIENT_ID && !window.googleSignInInitialized) {
+      if (window.google && import.meta.env.VITE_GOOGLE_CLIENT_ID && !window.googleSignInInitialized) {
         try {
           window.google.accounts.id.initialize({
-            client_id: env.VITE_GOOGLE_CLIENT_ID,
-            callback: handleGoogleResponse
+            client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
+            callback: handleGoogleResponse,
+            // Enhanced error handling for COOP/postMessage issues
+            error_callback: (error: any) => {
+              console.error('Google Sign-In error:', error);
+              // Handle postMessage-related errors
+              if (error?.type === 'postMessage' || error?.message?.includes('postMessage') || error?.message?.includes('Cross-Origin-Opener-Policy')) {
+                setAuthError('Google Sign-In blocked by browser security policy. Please try email login instead.');
+              } else {
+                setAuthError('Google Sign-In failed. Please try again or use email login.');
+              }
+
+              // Recovery mechanism: Attempt fallback initialization
+              setTimeout(() => {
+                try {
+                  if (window.google && window.google.accounts && window.google.accounts.id) {
+                    window.google.accounts.id.prompt();
+                  }
+                } catch (fallbackError) {
+                  console.warn('Google Sign-In fallback failed:', fallbackError);
+                }
+              }, 3000);
+            }
           });
           window.googleSignInInitialized = true;
-        } catch (e) {
+          console.log('Google Sign-In initialized successfully');
+        } catch (e: any) {
           console.warn('Google Sign-In initialization failed:', e);
+          // Handle COOP/postMessage blocking during initialization
+          if (e?.message?.includes('Cross-Origin-Opener-Policy') || e?.message?.includes('postMessage')) {
+            console.warn('Google Sign-In blocked by COOP policy - user will need to use email auth');
+            setAuthError('Google Sign-In is not available due to browser security settings. Please use email login.');
+          } else {
+            // Recovery mechanism: Retry initialization after delay
+            setTimeout(() => {
+              console.log('Retrying Google Sign-In initialization...');
+              window.googleSignInInitialized = false; // Reset flag
+              initGoogle();
+            }, 5000);
+          }
         }
       }
     };
@@ -606,7 +637,14 @@ export default function App() {
           clearInterval(interval);
         }
       }, 500); // Increased interval to reduce polling frequency
-      setTimeout(() => clearInterval(interval), 15000); // Increased timeout
+      setTimeout(() => {
+        clearInterval(interval);
+        // Recovery mechanism: If Google still not loaded, show email auth option
+        if (!window.googleSignInInitialized) {
+          console.warn('Google Sign-In script failed to load - falling back to email auth');
+          setAuthError('Google Sign-In unavailable. Please use email login.');
+        }
+      }, 15000); // Increased timeout
     }
   }, []);
 
@@ -616,8 +654,34 @@ export default function App() {
       try {
         const res = await api.googleLogin(credential);
         finalizeLogin(res.user, res.token);
-      } catch (e) { setAuthError("Authentication failed"); }
-    } catch (error) { setAuthError(TRANSLATIONS[language]['authErrorInvalid']); }
+      } catch (e) {
+        console.error('Google login API error:', e);
+        setAuthError("Authentication failed - please try email login instead");
+
+        // Recovery mechanism: Clear any corrupted auth state
+        try {
+          localStorage.removeItem('snapify_token');
+          localStorage.removeItem('snapify_user_id');
+          localStorage.removeItem('snapify_user_obj');
+        } catch (cleanupError) {
+          console.warn('Failed to cleanup auth state:', cleanupError);
+        }
+      }
+    } catch (error) {
+      console.error('Google response error:', error);
+      setAuthError(TRANSLATIONS[language]['authErrorInvalid']);
+
+      // Recovery mechanism: Attempt to reinitialize Google Sign-In
+      setTimeout(() => {
+        if (window.google && window.google.accounts && window.google.accounts.id) {
+          try {
+            window.google.accounts.id.prompt();
+          } catch (reinitError) {
+            console.warn('Failed to reinitialize Google Sign-In:', reinitError);
+          }
+        }
+      }, 2000);
+    }
   };
 
   const finalizeLogin = async (user: User, token: string) => {

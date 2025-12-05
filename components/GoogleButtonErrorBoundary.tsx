@@ -1,7 +1,9 @@
 import * as React from 'react';
+import { handlePostMessageError, postMessageFallbacks } from '../utils/postMessageUtils';
 
 interface GoogleButtonErrorBoundaryState {
     hasError: boolean;
+    errorType?: string;
 }
 
 interface GoogleButtonErrorBoundaryProps {
@@ -25,6 +27,28 @@ export class GoogleButtonErrorBoundary extends React.Component<
 
     componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
         console.error('Google Button Error Boundary details:', error, errorInfo);
+
+        // Check if this is a postMessage-related error
+        if (error.message.includes('postMessage') || error.message.includes('Cross-Origin-Opener-Policy')) {
+            const postMessageError = {
+                type: 'BLOCKED_BY_COOP',
+                message: error.message,
+                name: 'PostMessageError',
+                originalError: error
+            };
+
+            // Handle the postMessage error with appropriate fallback
+            handlePostMessageError(
+                postMessageError as any,
+                'Google Button Rendering',
+                postMessageFallbacks.googleSignIn
+            );
+
+            // Update state to show specific error type
+            this.setState({ hasError: true, errorType: 'POST_MESSAGE_BLOCKED' });
+        } else {
+            this.setState({ hasError: true });
+        }
     }
 
     render() {

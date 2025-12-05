@@ -113,7 +113,7 @@ export const getEventById = async (req, res) => {
 
 export const createEvent = async (req, res) => {
     const e = req.body;
-    if (e.hostId !== req.user.id && req.user.role !== 'ADMIN') return res.sendStatus(403);
+    if (e.hostId !== req.user.id && req.user.role !== 'ADMIN') return res.status(403).json({ error: "Forbidden", status: 403 });
 
     try {
         const stmt = db.prepare(`INSERT INTO events (id, title, description, date, city, hostId, code, expiresAt, pin, views, downloads, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
@@ -151,7 +151,7 @@ export const updateEvent = async (req, res) => {
         });
 
         if (!event) return res.status(404).json({ error: "Not found" });
-        if (event.hostId !== req.user.id && req.user.role !== 'ADMIN') return res.sendStatus(403);
+        if (event.hostId !== req.user.id && req.user.role !== 'ADMIN') return res.status(403).json({ error: "Forbidden", status: 403 });
 
         const fieldsToUpdate = Object.keys(updates).filter(key => allowedFields.includes(key));
         if (fieldsToUpdate.length === 0) return res.json({ success: true });
@@ -184,7 +184,7 @@ export const updateEvent = async (req, res) => {
 export const deleteEvent = (req, res) => {
     db.get("SELECT hostId FROM events WHERE id = ?", [req.params.id], (err, row) => {
         if (!row) return res.status(404).json({ error: "Not found" });
-        if (row.hostId !== req.user.id && req.user.role !== 'ADMIN') return res.sendStatus(403);
+        if (row.hostId !== req.user.id && req.user.role !== 'ADMIN') return res.status(403).json({ error: "Forbidden", status: 403 });
         db.run("DELETE FROM events WHERE id=?", req.params.id, (err) => {
             if (err) return res.status(500).json({ error: err.message });
             res.json({ success: true });
