@@ -118,3 +118,6 @@ server/uploads/
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# Comparison/backup directories
+webappV3/

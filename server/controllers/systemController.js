@@ -37,6 +37,76 @@ const getSystemDiskUsage = async () => {
     };
 };
 
+// Get system resource usage (CPU, memory, network)
+const getSystemResourceUsage = async () => {
+    const resources = {
+        cpu: { usage: 0, cores: 1, loadAverage: [0, 0, 0] },
+        memory: { total: '0 MB', used: '0 MB', available: '0 MB', usePercent: '0%' },
+        network: { rxBytes: 0, txBytes: 0, rxPackets: 0, txPackets: 0 },
+        uptime: 0,
+        timestamp: new Date().toISOString()
+    };
+
+    try {
+        // Get CPU usage and load average
+        const { stdout: cpuInfo } = await execAsync('top -bn1 | grep "Cpu(s)"');
+        const cpuMatch = cpuInfo.match(/(\d+\.\d+)%/);
+        if (cpuMatch) {
+            resources.cpu.usage = parseFloat(cpuMatch[1]);
+        }
+
+        // Get load average
+        const { stdout: loadAvg } = await execAsync('uptime');
+        const loadMatch = loadAvg.match(/load average: ([0-9.]+), ([0-9.]+), ([0-9.]+)/);
+        if (loadMatch) {
+            resources.cpu.loadAverage = [
+                parseFloat(loadMatch[1]),
+                parseFloat(loadMatch[2]),
+                parseFloat(loadMatch[3])
+            ];
+        }
+
+        // Get number of CPU cores
+        const { stdout: cpuCores } = await execAsync('nproc');
+        resources.cpu.cores = parseInt(cpuCores.trim()) || 1;
+
+        // Get memory usage
+        const { stdout: memInfo } = await execAsync('free -h | grep "^Mem:"');
+        const memParts = memInfo.trim().split(/\s+/);
+        if (memParts.length >= 7) {
+            resources.memory.total = memParts[1];
+            resources.memory.used = memParts[2];
+            resources.memory.available = memParts[6];
+            const usedPercent = memParts[2].replace('Gi', '').replace('Mi', '');
+            const totalPercent = memParts[1].replace('Gi', '').replace('Mi', '');
+            const percent = (parseFloat(usedPercent) / parseFloat(totalPercent)) * 100;
+            resources.memory.usePercent = `${percent.toFixed(1)}%`;
+        }
+
+        // Get network statistics
+        const { stdout: netStats } = await execAsync('cat /proc/net/dev | grep -E "(eth0|enp|wlan)" | head -1');
+        if (netStats) {
+            const netParts = netStats.trim().split(/\s+/);
+            if (netParts.length >= 17) {
+                resources.network.rxBytes = parseInt(netParts[1]) || 0;
+                resources.network.txBytes = parseInt(netParts[9]) || 0;
+                resources.network.rxPackets = parseInt(netParts[2]) || 0;
+                resources.network.txPackets = parseInt(netParts[10]) || 0;
+            }
+        }
+
+        // Get system uptime
+        const { stdout: uptime } = await execAsync('cat /proc/uptime');
+        const uptimeSeconds = parseFloat(uptime.split(' ')[0]);
+        resources.uptime = uptimeSeconds;
+
+    } catch (error) {
+        console.error('Error getting system resource usage:', error);
+    }
+
+    return resources;
+};
+
 // Get MinIO storage usage (both logical and physical)
 const getMinIOStorageUsage = async () => {
     const result = {
@@ -155,19 +225,32 @@ const getMinIOStorageUsage = async () => {
 
 export const getSystemStorage = async (req, res) => {
     try {
-        const [system, minio] = await Promise.all([
+        const [system, minio, resources] = await Promise.all([
             getSystemDiskUsage(),
-            getMinIOStorageUsage()
+            getMinIOStorageUsage(),
+            getSystemResourceUsage()
         ]);
 
         res.json({
             system,
             minio,
+            resources,
             timestamp: new Date().toISOString()
         });
     } catch (error) {
         console.error('Error in getSystemStorage:', error);
         res.status(500).json({ error: 'Failed to get storage information' });
+    }
+};
+
+// Get real-time system resources
+export const getSystemResources = async (req, res) => {
+    try {
+        const resources = await getSystemResourceUsage();
+        res.json(resources);
+    } catch (error) {
+        console.error('Error in getSystemResources:', error);
+        res.status(500).json({ error: 'Failed to get system resources' });
     }
 };
 
@@ -229,10 +312,10 @@ export const cleanMinIOBucket = async (req, res) => {
                 const deleteResponse = await s3Client.send(deleteCommand);
                 deletedCount += deleteResponse.Deleted?.length || 0;
 
-                console.log(`Deleted batch ${Math.floor(i/batchSize) + 1}: ${deleteResponse.Deleted?.length || 0} objects`);
+                console.log(`Deleted batch ${Math.floor(i / batchSize) + 1}: ${deleteResponse.Deleted?.length || 0} objects`);
 
             } catch (batchError) {
-                console.error(`Error deleting batch ${Math.floor(i/batchSize) + 1}:`, batchError);
+                console.error(`Error deleting batch ${Math.floor(i / batchSize) + 1}:`, batchError);
                 // Continue with next batch
             }
         }

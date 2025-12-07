@@ -37,7 +37,7 @@ export const api = {
         const res = await fetch(`${API_URL}/api/users`, { headers: { ...getAuthHeaders() } });
         return res.json();
     },
-    
+
     login: async (email: string, password?: string): Promise<{ token: string, user: User }> => {
         const res = await fetch(`${API_URL}/api/auth/login`, {
             method: 'POST',
@@ -89,7 +89,7 @@ export const api = {
             media: e.media.map((m: any) => ({ ...m, isWatermarked: !!m.isWatermarked }))
         }));
     },
-    
+
     fetchEventById: async (eventId: string): Promise<Event> => {
         console.log('fetchEventById called for:', eventId);
         const headers = getAuthHeaders();
@@ -170,11 +170,14 @@ export const api = {
     getSystemStorage: async (): Promise<any> => {
         return handleApiRequest('/api/system/storage', { headers: { ...getAuthHeaders() } });
     },
+    getSystemResources: async (): Promise<any> => {
+        return handleApiRequest('/api/system/resources', { headers: { ...getAuthHeaders() } });
+    },
     cleanMinIOBucket: async (): Promise<{ deletedCount: number; totalSize: string }> => {
-        return handleApiRequest('/api/system/storage/clean', { method: 'POST', headers: { ...getAuthHeaders() } });
+        return handleApiRequest('/api/system/clean-bucket', { method: 'POST', headers: { ...getAuthHeaders() } });
     },
     clearUsersDatabase: async (): Promise<{ adminPreserved: boolean; totalDeleted: number }> => {
-        return handleApiRequest('/api/system/users/clear', { method: 'POST', headers: { ...getAuthHeaders() } });
+        return handleApiRequest('/api/system/clear-users', { method: 'POST', headers: { ...getAuthHeaders() } });
     },
 
     deleteEvent: async (id: string): Promise<void> => {
@@ -259,7 +262,7 @@ export const api = {
 
     likeMedia: async (id: string): Promise<void> => { await fetch(`${API_URL}/api/media/${id}/like`, { method: 'PUT' }); },
     deleteMedia: async (id: string): Promise<void> => { await fetch(`${API_URL}/api/media/${id}`, { method: 'DELETE', headers: { ...getAuthHeaders() } }); },
-    
+
     bulkDeleteMedia: async (mediaIds: string[]): Promise<{ success: boolean; deletedCount: number }> => {
         const res = await fetch(`${API_URL}/api/media/bulk-delete`, {
             method: 'POST',
@@ -287,7 +290,7 @@ export const api = {
         });
         return res.json();
     },
-    
+
     resetSystem: async (): Promise<void> => {
         const res = await fetch(`${API_URL}/api/admin/reset`, {
             method: 'POST',

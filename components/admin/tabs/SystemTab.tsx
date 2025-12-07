@@ -12,30 +12,73 @@ export const SystemTab: React.FC = () => {
     const [systemStorage, setSystemStorage] = useState<{
         system: { filesystem: string; size: string; used: string; available: string; usePercent: string };
         minio: { filesystem: string; size: string; used: string; available: string; usePercent: string };
+        resources?: {
+            cpu: { usage: number; cores: number; loadAverage: number[] };
+            memory: { total: string; used: string; available: string; usePercent: string };
+            network: { rxBytes: number; txBytes: number; rxPackets: number; txPackets: number };
+            uptime: number;
+            timestamp: string;
+        };
+        timestamp: string;
+    } | null>(null);
+    const [systemResources, setSystemResources] = useState<{
+        cpu: { usage: number; cores: number; loadAverage: number[] };
+        memory: { total: string; used: string; available: string; usePercent: string };
+        network: { rxBytes: number; txBytes: number; rxPackets: number; txPackets: number };
+        uptime: number;
         timestamp: string;
     } | null>(null);
     const [storageLoading, setStorageLoading] = useState(false);
+    const [resourcesLoading, setResourcesLoading] = useState(false);
+    const [autoRefresh, setAutoRefresh] = useState(true);
 
     // Fetch system storage data
-    useEffect(() => {
-        const fetchStorageData = async () => {
-            setStorageLoading(true);
-            try {
-                const data = await api.getSystemStorage();
-                setSystemStorage(data);
-            } catch (error) {
-                console.error('Failed to fetch system storage data:', error);
-                if (error.message.includes('Session expired')) {
-                    alert('⚠️ Session expired. Please log in again to access system information.');
-                } else if (error.message.includes('Unauthorized')) {
-                    alert('⚠️ Authentication required. Please log in again to access system information.');
-                }
-            } finally {
-                setStorageLoading(false);
+    const fetchStorageData = async () => {
+        setStorageLoading(true);
+        try {
+            const data = await api.getSystemStorage();
+            setSystemStorage(data);
+        } catch (error) {
+            console.error('Failed to fetch system storage data:', error);
+            if (error.message.includes('Session expired')) {
+                alert('⚠️ Session expired. Please log in again to access system information.');
+            } else if (error.message.includes('Unauthorized')) {
+                alert('⚠️ Authentication required. Please log in again to access system information.');
             }
-        };
+        } finally {
+            setStorageLoading(false);
+        }
+    };
+
+    // Fetch system resources data
+    const fetchResourcesData = async () => {
+        setResourcesLoading(true);
+        try {
+            const data = await api.getSystemResources();
+            setSystemResources(data);
+        } catch (error) {
+            console.error('Failed to fetch system resources data:', error);
+        } finally {
+            setResourcesLoading(false);
+        }
+    };
+
+    // Initial data fetch
+    useEffect(() => {
         fetchStorageData();
+        fetchResourcesData();
     }, []);
+
+    // Auto-refresh resources every 30 seconds
+    useEffect(() => {
+        if (!autoRefresh) return;
+
+        const interval = setInterval(() => {
+            fetchResourcesData();
+        }, 30000); // 30 seconds
+
+        return () => clearInterval(interval);
+    }, [autoRefresh]);
 
     const handleCleanMinIOBucket = async () => {
         const confirmed = confirm('🚨 CRITICAL WARNING 🚨\n\n' +
@@ -107,6 +150,91 @@ export const SystemTab: React.FC = () => {
                 </div>
 
                 <div className="space-y-6">
+                    {/* System Resources Card */}
+                    <div className="border border-slate-200 rounded-2xl p-6 bg-slate-50/50">
+                        <div className="flex items-center justify-between mb-4">
+                            <h4 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                                <HardDrive size={18} /> System Resources
+                            </h4>
+                            <div className="flex items-center gap-2">
+                                <label className="text-sm text-slate-600">Auto-refresh:</label>
+                                <button
+                                    onClick={() => setAutoRefresh(!autoRefresh)}
+                                    className={`px-3 py-1 text-xs font-medium rounded-full transition-colors ${autoRefresh
+                                        ? 'bg-green-100 text-green-800 border border-green-200'
+                                        : 'bg-gray-100 text-gray-600 border border-gray-200'
+                                        }`}
+                                >
+                                    {autoRefresh ? 'ON' : 'OFF'}
+                                </button>
+                            </div>
+                        </div>
+                        {resourcesLoading ? (
+                            <div className="flex items-center justify-center py-8">
+                                <div className="animate-spin border-2 border-slate-300 border-t-slate-600 rounded-full w-6 h-6"></div>
+                                <span className="ml-3 text-slate-600">Loading resources...</span>
+                            </div>
+                        ) : systemResources ? (
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                {/* CPU Usage */}
+                                <div className={`p-4 rounded-xl border ${systemResources.cpu.usage > 90 ? 'bg-red-50 border-red-200' :
+                                    systemResources.cpu.usage > 75 ? 'bg-yellow-50 border-yellow-200' :
+                                        'bg-white border-slate-200'
+                                    }`}>
+                                    <div className="flex items-center justify-between mb-1">
+                                        <div className="text-sm font-bold text-slate-500 uppercase tracking-wider">CPU Usage</div>
+                                        <div className={`px-2 py-1 rounded-full text-xs font-medium ${systemResources.cpu.usage > 90 ? 'bg-red-100 text-red-800' :
+                                            systemResources.cpu.usage > 75 ? 'bg-yellow-100 text-yellow-800' :
+                                                'bg-green-100 text-green-800'
+                                            }`}>
+                                            {systemResources.cpu.usage > 90 ? 'Critical' :
+                                                systemResources.cpu.usage > 75 ? 'Warning' : 'Normal'}
+                                        </div>
+                                    </div>
+                                    <div className="text-lg font-black text-slate-900">{systemResources.cpu.usage.toFixed(1)}%</div>
+                                    <div className="text-xs text-slate-500 mt-1">
+                                        {systemResources.cpu.cores} cores • Load: {systemResources.cpu.loadAverage.map(l => l.toFixed(1)).join(', ')}
+                                    </div>
+                                </div>
+                                {/* Memory Usage */}
+                                <div className={`p-4 rounded-xl border ${parseFloat(systemResources.memory.usePercent) > 85 ? 'bg-red-50 border-red-200' :
+                                    parseFloat(systemResources.memory.usePercent) > 70 ? 'bg-yellow-50 border-yellow-200' :
+                                        'bg-white border-slate-200'
+                                    }`}>
+                                    <div className="flex items-center justify-between mb-1">
+                                        <div className="text-sm font-bold text-slate-500 uppercase tracking-wider">Memory</div>
+                                        <div className={`px-2 py-1 rounded-full text-xs font-medium ${parseFloat(systemResources.memory.usePercent) > 85 ? 'bg-red-100 text-red-800' :
+                                            parseFloat(systemResources.memory.usePercent) > 70 ? 'bg-yellow-100 text-yellow-800' :
+                                                'bg-green-100 text-green-800'
+                                            }`}>
+                                            {parseFloat(systemResources.memory.usePercent) > 85 ? 'Critical' :
+                                                parseFloat(systemResources.memory.usePercent) > 70 ? 'Warning' : 'Normal'}
+                                        </div>
+                                    </div>
+                                    <div className="text-lg font-black text-slate-900">{systemResources.memory.usePercent}</div>
+                                    <div className="text-xs text-slate-500 mt-1">
+                                        {systemResources.memory.used} / {systemResources.memory.total}
+                                    </div>
+                                </div>
+                                {/* Uptime */}
+                                <div className="bg-white p-4 rounded-xl border border-slate-200">
+                                    <div className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-1">Uptime</div>
+                                    <div className="text-lg font-black text-slate-900">
+                                        {Math.floor(systemResources.uptime / 86400)}d {Math.floor((systemResources.uptime % 86400) / 3600)}h
+                                    </div>
+                                    <div className="text-xs text-slate-500 mt-1">
+                                        {Math.floor(systemResources.uptime / 3600)} hours total
+                                    </div>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="text-center py-8 text-slate-500">
+                                <HardDrive size={48} className="mx-auto mb-4 text-slate-300" />
+                                <p>Unable to load system resources</p>
+                            </div>
+                        )}
+                    </div>
+
                     {/* System Storage Card */}
                     <div className="border border-slate-200 rounded-2xl p-6 bg-slate-50/50">
                         <h4 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
@@ -176,6 +304,61 @@ export const SystemTab: React.FC = () => {
                         )}
                     </div>
 
+                    {/* System Health Summary */}
+                    <div className="border border-slate-200 rounded-2xl p-6 bg-slate-50/50">
+                        <h4 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+                            <AlertTriangle size={18} /> System Health Summary
+                        </h4>
+
+                        {systemResources ? (
+                            <div className="space-y-4">
+                                {/* Overall Status */}
+                                <div className="bg-white p-4 rounded-xl border border-slate-200">
+                                    <div className="flex items-center justify-between">
+                                        <div>
+                                            <h5 className="font-semibold text-slate-900">Overall System Status</h5>
+                                            <p className="text-sm text-slate-600 mt-1">
+                                                {systemResources.cpu.usage > 90 || parseFloat(systemResources.memory.usePercent) > 85 ? 'Critical - Immediate attention required' :
+                                                    systemResources.cpu.usage > 75 || parseFloat(systemResources.memory.usePercent) > 70 ? 'Warning - Monitor closely' :
+                                                        'Normal - System operating optimally'}
+                                            </p>
+                                        </div>
+                                        <div className={`px-4 py-2 rounded-full text-sm font-bold ${systemResources.cpu.usage > 90 || parseFloat(systemResources.memory.usePercent) > 85 ? 'bg-red-100 text-red-800' :
+                                                systemResources.cpu.usage > 75 || parseFloat(systemResources.memory.usePercent) > 70 ? 'bg-yellow-100 text-yellow-800' :
+                                                    'bg-green-100 text-green-800'
+                                            }`}>
+                                            {systemResources.cpu.usage > 90 || parseFloat(systemResources.memory.usePercent) > 85 ? 'CRITICAL' :
+                                                systemResources.cpu.usage > 75 || parseFloat(systemResources.memory.usePercent) > 70 ? 'WARNING' : 'HEALTHY'}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Active Alerts */}
+                                {(systemResources.cpu.usage > 75 || parseFloat(systemResources.memory.usePercent) > 70) && (
+                                    <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
+                                        <div className="flex items-start gap-3">
+                                            <AlertTriangle className="text-yellow-600 mt-0.5" size={20} />
+                                            <div>
+                                                <h5 className="font-semibold text-yellow-800">Active System Alerts</h5>
+                                                <ul className="text-sm text-yellow-700 mt-2 space-y-1">
+                                                    {systemResources.cpu.usage > 90 && <li>• CPU usage is critically high ({systemResources.cpu.usage.toFixed(1)}%)</li>}
+                                                    {systemResources.cpu.usage > 75 && systemResources.cpu.usage <= 90 && <li>• CPU usage is elevated ({systemResources.cpu.usage.toFixed(1)}%)</li>}
+                                                    {parseFloat(systemResources.memory.usePercent) > 85 && <li>• Memory usage is critically high ({systemResources.memory.usePercent})</li>}
+                                                    {parseFloat(systemResources.memory.usePercent) > 70 && parseFloat(systemResources.memory.usePercent) <= 85 && <li>• Memory usage is elevated ({systemResources.memory.usePercent})</li>}
+                                                </ul>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        ) : (
+                            <div className="text-center py-8 text-slate-500">
+                                <AlertTriangle size={48} className="mx-auto mb-4 text-slate-300" />
+                                <p>Unable to assess system health</p>
+                            </div>
+                        )}
+                    </div>
+
                     {/* System Lab Card */}
                     <div className="border border-red-200 rounded-2xl p-6 bg-red-50/30">
                         <div className="flex items-center gap-3 mb-6">
@@ -238,9 +421,23 @@ export const SystemTab: React.FC = () => {
                         </div>
 
                         {/* Last Updated */}
-                        {systemStorage && (
-                            <div className="text-center text-xs text-slate-400">
-                                Last updated: {new Date(systemStorage.timestamp).toLocaleString()}
+                        {(systemStorage || systemResources) && (
+                            <div className="flex justify-between items-center text-xs text-slate-400">
+                                <div>
+                                    Storage: {systemStorage ? new Date(systemStorage.timestamp).toLocaleString() : 'Never'}
+                                </div>
+                                <div>
+                                    Resources: {systemResources ? new Date(systemResources.timestamp).toLocaleString() : 'Never'}
+                                </div>
+                                <button
+                                    onClick={() => {
+                                        fetchStorageData();
+                                        fetchResourcesData();
+                                    }}
+                                    className="px-2 py-1 text-xs bg-blue-50 text-blue-600 rounded hover:bg-blue-100"
+                                >
+                                    Refresh All
+                                </button>
                             </div>
                         )}
                     </div>

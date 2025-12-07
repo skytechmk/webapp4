@@ -6,6 +6,9 @@ const router = express.Router();
 // GET /api/system/storage - Get system and MinIO storage information
 router.get('/storage', systemController.getSystemStorage);
 
+// GET /api/system/resources - Get real-time system resource usage
+router.get('/resources', systemController.getSystemResources);
+
 // POST /api/system/clean-bucket - Clean/empty the MinIO bucket
 router.post('/clean-bucket', systemController.cleanMinIOBucket);
 
