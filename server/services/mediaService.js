@@ -3,6 +3,8 @@ import { db } from '../config/db.js';
 import { cacheService } from './cacheService.js';
 import { uploadToS3, deleteFromS3, getS3Object } from './storage.js';
 import sharp from 'sharp';
+import rustImageService from './rustImageService.js';
+import gpuImageService from './gpuImageService.js';
 import path from 'path';
 import fs from 'fs';
 
@@ -11,6 +13,15 @@ class MediaService {
         this.allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'video/mp4'];
         this.maxImageSize = 10 * 1024 * 1024; // 10MB
         this.maxVideoSize = 100 * 1024 * 1024; // 100MB
+        this.initializeServices();
+    }
+
+    async initializeServices() {
+        try {
+            await gpuImageService.initialize();
+        } catch (error) {
+            console.warn('Failed to initialize GPU service:', error);
+        }
     }
 
     // Validate file type and size
@@ -29,28 +40,36 @@ class MediaService {
 
     // Process and optimize image
     async processImage(buffer, options = {}) {
+        // Try GPU processing first, then Rust CPU, then Sharp as final fallback
+        try {
+            if (gpuImageService.isGpuAvailable()) {
+                return await gpuImageService.processImage(buffer, options);
+            }
+        } catch (error) {
+            console.warn('GPU processing failed, trying CPU processing:', error);
+        }
+
+        try {
+            return await rustImageService.processImage(buffer, options);
+        } catch (error) {
+            console.warn('Rust CPU processing failed, falling back to Sharp:', error);
+            return this.fallbackToSharp(buffer, options);
+        }
+    }
+
+    // Fallback to Sharp for image processing
+    async fallbackToSharp(buffer, options = {}) {
         const {
             maxWidth = 1920,
             maxHeight = 1080,
             quality = 85,
-            format = 'jpeg',
-            watermarkText = null
+            format = 'jpeg'
         } = options;
 
         let sharpInstance = sharp(buffer);
 
         // Auto-rotate based on EXIF orientation
         sharpInstance = sharpInstance.rotate();
-
-        // Apply watermark if requested
-        if (watermarkText) {
-            const svgWatermark = Buffer.from(
-                `<svg width="800" height="100">
-                    <text x="50%" y="50%" text-anchor="middle" font-size="48" fill="white" opacity="0.3">${watermarkText}</text>
-                </svg>`
-            );
-            sharpInstance = sharpInstance.composite([{ input: svgWatermark, gravity: 'southeast' }]);
-        }
 
         // Get image metadata
         const metadata = await sharpInstance.metadata();
@@ -68,6 +87,8 @@ class MediaService {
             sharpInstance = sharpInstance.jpeg({ quality });
         } else if (format === 'webp') {
             sharpInstance = sharpInstance.webp({ quality });
+        } else if (format === 'png') {
+            sharpInstance = sharpInstance.png();
         }
 
         return sharpInstance.toBuffer();
@@ -307,6 +328,18 @@ class MediaService {
 
         const stats = db.prepare(query).all(...params);
         return stats;
+    }
+
+    // Get image processing statistics
+    getProcessingStats() {
+        return {
+            gpu: gpuImageService.getGpuStats(),
+            services: {
+                gpu: gpuImageService.isGpuAvailable(),
+                rust: true, // rustImageService is always available
+                sharp: true // Sharp is always available as fallback
+            }
+        };
     }
 
     // Search media

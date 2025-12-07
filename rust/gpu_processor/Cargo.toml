@@ -1,0 +1,13 @@
+[package]
+name = "gpu_processor"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+neon = { version = "1", default-features = false, features = ["napi-6"] }
+cudarc = { version = "0.10", features = ["nvrtc"] }
+bytemuck = "1.14"
+lazy_static = "1.4"

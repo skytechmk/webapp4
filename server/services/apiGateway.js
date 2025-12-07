@@ -9,6 +9,8 @@ import { monitoring } from './monitoringService.js';
 class ApiGateway {
     constructor() {
         this.app = express();
+        // Behind nginx/Cloudflare, trust proxy to ensure real client IPs and avoid rate-limit X-Forwarded-For errors
+        this.app.set('trust proxy', 1);
         this.setupMiddleware();
         this.setupRoutes();
     }
@@ -86,6 +88,12 @@ class ApiGateway {
             });
         });
 
+        // System health (no auth, minimal info)
+        this.app.get('/api/system/health', async (req, res) => {
+            const { getSystemHealth } = await import('../controllers/systemController.js');
+            return getSystemHealth(req, res);
+        });
+
         // Public proxy endpoint
         this.app.get('/api/proxy-media', async (req, res) => {
             const { key } = req.query;
@@ -142,6 +150,14 @@ class ApiGateway {
             // System routes (admin only)
             const systemRoutes = await import('../routes/systemRoutes.js');
             this.app.use('/api/system', authenticateToken, systemRoutes.default);
+
+            // GPU routes (public for health checks)
+            const gpuRoutes = await import('../routes/gpuRoutes.js');
+            this.app.use('/api/gpu', gpuRoutes.default);
+
+            // Rust routes (public for health checks)
+            const rustRoutes = await import('../routes/rustRoutes.js');
+            this.app.use('/api/rust', rustRoutes.default);
 
         } catch (error) {
             logger.error('Error loading routes:', { error: error.message, stack: error.stack });

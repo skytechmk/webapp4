@@ -196,3 +196,26 @@ export const likeMedia = (req, res) => {
         res.json({ success: true });
     });
 };
+
+// Get media processing health status
+export const getMediaHealth = async (req, res) => {
+    try {
+        const mediaService = (await import('../services/mediaService.js')).default;
+        const stats = mediaService.getProcessingStats();
+
+        res.json({
+            status: 'ok',
+            service: 'media',
+            ...stats,
+            timestamp: new Date().toISOString()
+        });
+    } catch (error) {
+        console.error('Error in getMediaHealth:', error);
+        res.status(500).json({
+            status: 'error',
+            service: 'media',
+            error: 'Failed to get media health',
+            timestamp: new Date().toISOString()
+        });
+    }
+};

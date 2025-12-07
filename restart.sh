@@ -46,18 +46,29 @@ check_health() {
     local url=$1
     local timeout=30
     local count=0
+    local last_status=""
+    local last_error=""
 
     print_status "Checking health at $url..."
     while [ $count -lt $timeout ]; do
-        if curl -s --head --fail "$url" > /dev/null 2>&1; then
-            print_status "✅ Health check passed for $url"
+        # Use GET instead of HEAD because several services don't implement HEAD and return 405
+        # Accept any 2xx/3xx response as healthy
+        last_status=$(curl -s -o /dev/null -w "%{http_code}" "$url" 2>/dev/null) || last_error="curl_error"
+
+        if [[ $last_status =~ ^[23][0-9]{2}$ ]]; then
+            print_status "✅ Health check passed for $url (status: $last_status)"
             return 0
         fi
+
         sleep 1
         count=$((count + 1))
     done
 
-    print_error "❌ Health check failed for $url after ${timeout}s"
+    if [ -n "$last_status" ]; then
+        print_error "❌ Health check failed for $url after ${timeout}s (last status: $last_status)"
+    else
+        print_error "❌ Health check failed for $url after ${timeout}s ${last_error:+($last_error)}"
+    fi
     return 1
 }
 
@@ -147,6 +158,34 @@ if check_health "https://snapify.mk/api/health"; then
     print_status "✅ API health check passed"
 else
     print_warning "⚠️  API health check failed - service may still be starting"
+fi
+
+# Check system monitoring (public lightweight endpoint)
+if check_health "https://snapify.mk/api/system/health"; then
+    print_status "✅ System monitoring health check passed"
+else
+    print_warning "⚠️  System monitoring health check failed"
+fi
+
+# Check GPU service
+if check_health "https://snapify.mk/api/gpu/status"; then
+    print_status "✅ GPU service health check passed"
+else
+    print_warning "⚠️  GPU service health check failed"
+fi
+
+# Check Rust modules
+if check_health "https://snapify.mk/api/rust/status"; then
+    print_status "✅ Rust modules health check passed"
+else
+    print_warning "⚠️  Rust modules health check failed"
+fi
+
+# Check media processing
+if check_health "https://snapify.mk/api/media/health"; then
+    print_status "✅ Media processing health check passed"
+else
+    print_warning "⚠️  Media processing health check failed"
 fi
 
 # Check PM2 status

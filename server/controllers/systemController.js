@@ -447,3 +447,31 @@ export const clearUsersDatabase = async (req, res) => {
         });
     }
 };
+
+// Public lightweight health check (no auth required)
+export const getSystemHealth = async (_req, res) => {
+    try {
+        const disk = await getSystemDiskUsage();
+
+        res.json({
+            status: 'ok',
+            service: 'system',
+            disk: {
+                filesystem: disk.filesystem,
+                size: disk.size,
+                used: disk.used,
+                available: disk.available,
+                usePercent: disk.usePercent
+            },
+            timestamp: new Date().toISOString()
+        });
+    } catch (error) {
+        console.error('Error in getSystemHealth:', error);
+        res.status(500).json({
+            status: 'error',
+            service: 'system',
+            error: 'Failed to get system health',
+            timestamp: new Date().toISOString()
+        });
+    }
+};

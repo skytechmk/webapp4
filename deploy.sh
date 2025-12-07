@@ -98,6 +98,37 @@ install_system_packages() {
     # Install monitoring tools
     $SUDO_CMD apt install -y htop iotop ncdu
 
+    # Install Rust toolchain
+    if ! command -v rustc &> /dev/null; then
+        print_status "Installing Rust toolchain..."
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+        source ~/.cargo/env || source ~/.profile
+    fi
+
+    # Install wasm-pack
+    if ! command -v wasm-pack &> /dev/null; then
+        print_status "Installing wasm-pack..."
+        cargo install wasm-pack
+    fi
+
+    # Install Neon CLI
+    if ! command -v neon &> /dev/null; then
+        print_status "Installing Neon CLI..."
+        $SUDO_CMD npm install -g neon-cli
+    fi
+
+    # Install CUDA toolkit
+    if ! command -v nvcc &> /dev/null; then
+        print_status "Installing CUDA toolkit..."
+        # Add NVIDIA repository
+        wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/cuda-ubuntu2004.pin
+        $SUDO_CMD mv cuda-ubuntu2004.pin /etc/apt/preferences.d/cuda-repository-pin-600
+        $SUDO_CMD apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/7fa2af80.pub
+        $SUDO_CMD add-apt-repository "deb https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/ /" -y
+        $SUDO_CMD apt-get update
+        $SUDO_CMD apt-get -y install cuda-toolkit-11-8
+    fi
+
     print_status "✅ System packages installed"
 }
 
@@ -125,6 +156,65 @@ setup_directories() {
     mkdir -p "$PROJECT_DIR/logs"
 
     print_status "✅ Directories created"
+}
+
+# Function to build Rust modules
+build_rust_modules() {
+    print_step "Building Rust modules..."
+
+    # Check if cargo is available
+    if ! command -v cargo &> /dev/null; then
+        print_warning "Cargo not available. Skipping Rust module builds. Services will fallback to JavaScript implementations."
+        return 0
+    fi
+
+    # Build WASM modules
+    if [ -d "rust/image_processor" ]; then
+        print_status "Building image_processor WASM module..."
+        cd rust/image_processor
+        if wasm-pack build --target web --out-dir ../../server/services/wasm; then
+            print_status "WASM module built successfully"
+        else
+            print_warning "Failed to build WASM module. Services will fallback to JavaScript implementations."
+        fi
+        cd ../..
+    fi
+
+    # Build native modules
+    if [ -d "rust/gpu_processor" ]; then
+        print_status "Building gpu_processor native module..."
+        cd rust/gpu_processor
+        if neon build --release; then
+            print_status "Native GPU module built successfully"
+        else
+            print_warning "Failed to build native GPU module. Services will fallback to CPU processing."
+        fi
+        cd ../..
+    fi
+
+    print_status "✅ Rust modules build process completed"
+}
+
+# Function to validate GPU
+validate_gpu() {
+    print_step "Validating GPU and CUDA..."
+
+    # Check for NVIDIA GPU
+    if command -v nvidia-smi &> /dev/null; then
+        print_status "NVIDIA GPU detected"
+        nvidia-smi --query-gpu=name,memory.total,memory.free --format=csv,noheader,nounits || print_warning "Failed to query GPU info"
+    else
+        print_warning "NVIDIA GPU not detected or nvidia-smi not available"
+    fi
+
+    # Check CUDA
+    if command -v nvcc &> /dev/null; then
+        print_status "CUDA toolkit available: $(nvcc --version | grep release | sed -n -e 's/^.*release \([0-9]\+\.[0-9]\+\).*$/\1/p')"
+    else
+        print_warning "CUDA toolkit not available"
+    fi
+
+    print_status "✅ GPU validation completed"
 }
 
 # Function to deploy application
@@ -254,6 +344,34 @@ test_deployment() {
     else
         print_warning "⚠️  Redis connection check failed"
     fi
+
+    # Test system monitoring endpoint
+    if curl -s -f http://localhost:3001/api/system/resources > /dev/null; then
+        print_status "✅ System monitoring endpoint check passed"
+    else
+        print_warning "⚠️  System monitoring endpoint check failed"
+    fi
+
+    # Test GPU service availability
+    if curl -s -f http://localhost:3001/api/gpu/status > /dev/null; then
+        print_status "✅ GPU service availability check passed"
+    else
+        print_warning "⚠️  GPU service availability check failed"
+    fi
+
+    # Test Rust module loading
+    if curl -s -f http://localhost:3001/api/rust/status > /dev/null; then
+        print_status "✅ Rust module loading verification passed"
+    else
+        print_warning "⚠️  Rust module loading verification failed"
+    fi
+
+    # Test media processing service
+    if curl -s -f http://localhost:3001/api/media/health > /dev/null; then
+        print_status "✅ Media processing service health check passed"
+    else
+        print_warning "⚠️  Media processing service health check failed"
+    fi
 }
 
 # Function to setup monitoring
@@ -342,7 +460,9 @@ main() {
 
     # Installation and setup
     install_system_packages
+    validate_gpu
     setup_directories
+    build_rust_modules
     deploy_application
     configure_nginx
     setup_ssl
