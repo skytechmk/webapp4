@@ -131,7 +131,7 @@ export const processFileUpload = async (file, metadata, userId = null) => {
             });
         }
 
-        return { success: true, uploadId };
+        return { success: true, uploadId, s3Key, previewKey };
 
     } catch (error) {
 

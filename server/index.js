@@ -21,6 +21,7 @@ import bcrypt from 'bcrypt';
 import { OAuth2Client } from 'google-auth-library';
 import { GoogleGenAI } from "@google/genai";
 import crypto from 'crypto'; // Added for randomUUID
+import { setIo } from './services/socket.js';
 
 // ES module equivalent of __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -88,6 +89,8 @@ const io = new Server(server, {
         credentials: true
     }
 });
+// Share socket instance with services
+setIo(io);
 
 // Middleware
 app.use(cors({

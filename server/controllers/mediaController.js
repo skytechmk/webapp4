@@ -77,7 +77,10 @@ export const uploadMedia = async (req, res) => {
         res.json({
             uploadId: result.uploadId,
             status: 'queued',
-            message: 'Upload queued for processing'
+            message: 'Upload queued for processing',
+            // Provide URLs so client can render immediately
+            url: getPublicUrl(result.s3Key),
+            previewUrl: result.previewKey ? getPublicUrl(result.previewKey) : null
         });
 
     } catch (error) {
@@ -90,6 +93,15 @@ export const uploadMedia = async (req, res) => {
         res.status(500).json({
             error: error.message || 'Upload failed',
             uploadId: body.id
+        });
+
+        // Log full error for debugging 500s
+        console.error('Upload failed', {
+            uploadId: body.id,
+            eventId: body.eventId,
+            userId: req.user?.id,
+            error: error.message,
+            stack: error.stack
         });
     }
 };

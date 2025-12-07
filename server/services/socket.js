@@ -70,8 +70,15 @@ export const initSocket = (server) => {
     return io;
 };
 
+export const setIo = (instance) => {
+    io = instance;
+};
+
 export const getIo = () => {
-    if (!io) throw new Error("Socket.io not initialized!");
+    if (!io) {
+        console.warn("Socket.io not initialized");
+        return null;
+    }
     return io;
 };
 

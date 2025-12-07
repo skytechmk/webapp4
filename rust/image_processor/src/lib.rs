@@ -4,6 +4,7 @@ use image::codecs::jpeg::JpegEncoder;
 use image::codecs::png::PngEncoder;
 use image::codecs::webp::WebPEncoder;
 use std::io::Cursor;
+use web_sys::console;
 
 // This is like the `main` function, except for JavaScript.
 #[wasm_bindgen(start)]
@@ -12,6 +13,7 @@ pub fn main() {
     // It's disabled in release mode so it doesn't bloat up the file size.
     #[cfg(feature = "console_error_panic_hook")]
     console_error_panic_hook::set_once();
+    console::log_1(&"Rust Image Processor WASM module initialized".into());
 }
 
 #[wasm_bindgen]
@@ -71,6 +73,7 @@ impl ImageProcessor {
 
     #[wasm_bindgen]
     pub fn process_image(&self, image_data: &[u8], width: u32, height: u32, format: &str, quality: u8) -> Result<Vec<u8>, JsValue> {
+        console::log_1(&format!("process_image called with width: {}, height: {}, format: {}, quality: {}", width, height, format, quality).into());
         let mut img = image::load_from_memory(image_data)
             .map_err(|e| JsValue::from_str(&format!("Failed to load image: {}", e)))?;
 

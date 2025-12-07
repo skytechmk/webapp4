@@ -102,6 +102,13 @@ class ApiGateway {
                 return res.status(400).send("Missing key");
             }
 
+            const sendPlaceholder = (status = 200) => {
+                res.status(status);
+                res.setHeader('Content-Type', 'image/svg+xml');
+                res.setHeader('Cache-Control', 'public, max-age=60');
+                res.send(`<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400" viewBox="0 0 600 400" fill="none"><rect width="600" height="400" rx="24" fill="#f4f4f5"/><path d="M120 300l110-140 85 110 60-80 105 140H120Z" fill="#d4d4d8"/><circle cx="210" cy="150" r="32" fill="#e5e7eb"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="#9ca3af" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="600">Image unavailable</text></svg>`);
+            };
+
             try {
                 const { getS3Object } = await import('./storage.js');
                 console.log('Fetching S3 object for key:', key);
@@ -113,7 +120,8 @@ class ApiGateway {
                 console.log('Piping S3 object to response');
             } catch (e) {
                 console.error('Proxy error for key:', key, e.message);
-                res.status(404).send("Not Found");
+                // Return inline placeholder to avoid broken thumbnails when the file is missing
+                sendPlaceholder(e?.$metadata?.httpStatusCode === 404 ? 200 : 500);
             }
         });
 

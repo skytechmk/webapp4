@@ -81,7 +81,7 @@ declare global {
 }
 
 export default function App() {
-  console.log('🚀 Snapify App v2.2 loaded at:', new Date().toISOString());
+  console.log('🚀 Snapify App v4.0 loaded at:', new Date().toISOString());
 
   // -- State --
   const [view, setView] = useState<'landing' | 'dashboard' | 'event' | 'admin' | 'live'>('landing');

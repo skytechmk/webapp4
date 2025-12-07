@@ -5,6 +5,7 @@ use cudarc::driver::DevicePtr;
 use cudarc::nvrtc::Ptx;
 use std::sync::Arc;
 use lazy_static::lazy_static;
+use std::println;
 
 lazy_static! {
     static ref CUDA_DEVICE: Option<Arc<CudaDevice>> = {
@@ -20,6 +21,7 @@ fn gpu_processor_get_device_count(mut cx: FunctionContext) -> JsResult<JsNumber>
 }
 
 fn gpu_processor_resize_image(mut cx: FunctionContext) -> JsResult<JsNumber> {
+    println!("GPU processor resize_image called with input: {}x{}, output: {}x{}", input_width, input_height, output_width, output_height);
     let input_data = cx.argument::<JsBuffer>(0)?;
     let input_width = cx.argument::<JsNumber>(1)?.value(&mut cx) as usize;
     let input_height = cx.argument::<JsNumber>(2)?.value(&mut cx) as usize;
