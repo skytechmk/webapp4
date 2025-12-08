@@ -5,6 +5,7 @@ export const getGpuStatus = async (req, res) => {
     try {
         await gpuImageService.initialize();
         const status = gpuImageService.getGpuStats();
+        res.setHeader('Cache-Control', 'public, max-age=3600');
         res.json({
             status: 'ok',
             service: 'gpu',

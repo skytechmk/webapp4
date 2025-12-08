@@ -99,6 +99,7 @@ export const getEventById = async (req, res) => {
             role: evt.hostUserRole
         } : null;
 
+        res.setHeader('Cache-Control', 'public, max-age=3600');
         res.json({
             ...evt,
             media: signedMedia,

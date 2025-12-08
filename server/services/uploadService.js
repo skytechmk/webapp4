@@ -9,6 +9,7 @@ import { db } from '../config/db.js';
 import { uploadToS3, deleteFromS3 } from './storage.js';
 import { getIo } from './socket.js';
 import { cacheService } from './cacheService.js';
+import { mediaService } from './mediaService.js';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -124,7 +125,7 @@ export const processFileUpload = async (file, metadata, userId = null) => {
                         watermarkText: mediaItem.watermarkText,
                         isProcessing: false
                     };
-    
+
                     // Emit to clients in the event room
                     io.to(eventId).emit('media_uploaded', formattedItem);
                 }
@@ -197,6 +198,8 @@ const processImageUpload = async (file, s3Key, previewKey, eventId, uploadId) =>
     // Create thumbnail
     const previewPath = path.join(uploadDir, `thumb_${uploadId}.jpg`);
     let thumbnailCreated = false;
+    let processedBuffer = null;
+    let thumbnailBuffer = null;
 
     try {
         // Ensure upload directory exists
@@ -204,24 +207,56 @@ const processImageUpload = async (file, s3Key, previewKey, eventId, uploadId) =>
             fs.mkdirSync(uploadDir, { recursive: true });
         }
 
+        // Read the original file buffer
+        const originalBuffer = fs.readFileSync(file.path);
 
-        // Create thumbnail with error handling
+        // Process main image using the GPU/Rust/Sharp pipeline
         try {
-            await sharp(file.path)
-                .rotate() // Auto-rotate based on EXIF orientation
-                .resize(400, 400, { fit: 'inside', withoutEnlargement: true })
-                .jpeg({ quality: 80, progressive: true })
-                .toFile(previewPath);
-            thumbnailCreated = true;
-        } catch (sharpError) {
-            throw new Error(`Image processing failed: ${sharpError.message}`);
+            processedBuffer = await mediaService.processImage(originalBuffer, {
+                maxWidth: 1920,
+                maxHeight: 1080,
+                quality: 85,
+                format: 'jpeg'
+            });
+        } catch (processError) {
+            console.error(`Image processing failed for ${uploadId}:`, processError);
+            throw new Error(`Image processing failed: ${processError.message}`);
         }
 
+        // Create thumbnail using the same pipeline
+        try {
+            thumbnailBuffer = await mediaService.processImage(originalBuffer, {
+                maxWidth: 400,
+                maxHeight: 400,
+                quality: 80,
+                format: 'jpeg'
+            });
+            thumbnailCreated = true;
+        } catch (thumbError) {
+            console.warn(`Thumbnail creation failed for ${uploadId}, using fallback:`, thumbError);
+            // Fallback: create simple thumbnail with Sharp
+            try {
+                thumbnailBuffer = await sharp(originalBuffer)
+                    .rotate()
+                    .resize(400, 400, { fit: 'inside', withoutEnlargement: true })
+                    .jpeg({ quality: 80 })
+                    .toBuffer();
+                thumbnailCreated = true;
+            } catch (fallbackError) {
+                console.error(`Thumbnail fallback also failed for ${uploadId}:`, fallbackError);
+                throw new Error(`Thumbnail creation failed: ${fallbackError.message}`);
+            }
+        }
+
+        // Write processed buffers to temp files for upload
+        const processedPath = path.join(uploadDir, `processed_${uploadId}.jpg`);
+        fs.writeFileSync(processedPath, processedBuffer);
+        fs.writeFileSync(previewPath, thumbnailBuffer);
 
         // Upload both files in parallel (don't auto-delete, we'll handle cleanup)
         try {
             await Promise.all([
-                uploadToS3(file.path, s3Key, file.mimetype, false),
+                uploadToS3(processedPath, s3Key, file.mimetype, false),
                 uploadToS3(previewPath, previewKey, 'image/jpeg', false)
             ]);
         } catch (s3Error) {
@@ -231,7 +266,6 @@ const processImageUpload = async (file, s3Key, previewKey, eventId, uploadId) =>
 
         // Update progress
         notifyUploadProgress(eventId, uploadId, 'uploading', 75);
-
 
         // Emit media_processed event for real-time updates
         const io = getIo();
@@ -250,6 +284,9 @@ const processImageUpload = async (file, s3Key, previewKey, eventId, uploadId) =>
         try {
             if (thumbnailCreated && fs.existsSync(previewPath)) {
                 fs.unlinkSync(previewPath);
+            }
+            if (processedBuffer && fs.existsSync(path.join(uploadDir, `processed_${uploadId}.jpg`))) {
+                fs.unlinkSync(path.join(uploadDir, `processed_${uploadId}.jpg`));
             }
             if (fs.existsSync(file.path)) {
                 fs.unlinkSync(file.path);

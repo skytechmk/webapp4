@@ -117,6 +117,12 @@ install_system_packages() {
         $SUDO_CMD npm install -g neon-cli
     fi
 
+    # Install OpenCV development libraries
+    if ! pkg-config --exists opencv4; then
+        print_status "Installing OpenCV development libraries..."
+        $SUDO_CMD apt install -y libopencv-dev pkg-config
+    fi
+
     # Install CUDA toolkit
     if ! command -v nvcc &> /dev/null; then
         print_status "Installing CUDA toolkit..."
@@ -193,6 +199,35 @@ build_rust_modules() {
     fi
 
     print_status "✅ Rust modules build process completed"
+}
+
+# Function to build C++ modules
+build_cpp_modules() {
+    print_step "Building C++ modules..."
+
+    # Check if node-gyp is available
+    if ! command -v node-gyp &> /dev/null; then
+        print_warning "node-gyp not available. Skipping C++ module builds. Services will fallback to JavaScript implementations."
+        return 0
+    fi
+
+    # Check if OpenCV is available
+    if ! pkg-config --exists opencv4; then
+        print_warning "OpenCV not available. Skipping C++ module builds. Services will fallback to JavaScript implementations."
+        return 0
+    fi
+
+    # Build C++ addon
+    if [ -d "cpp" ]; then
+        print_status "Building C++ image processor addon..."
+        if npm run build:cpp-addon; then
+            print_status "C++ addon built successfully"
+        else
+            print_warning "Failed to build C++ addon. Services will fallback to JavaScript implementations."
+        fi
+    fi
+
+    print_status "✅ C++ modules build process completed"
 }
 
 # Function to validate GPU
@@ -366,6 +401,13 @@ test_deployment() {
         print_warning "⚠️  Rust module loading verification failed"
     fi
 
+    # Test C++ module loading
+    if curl -s -f http://localhost:3001/api/cpp/status > /dev/null; then
+        print_status "✅ C++ module loading verification passed"
+    else
+        print_warning "⚠️  C++ module loading verification failed"
+    fi
+
     # Test media processing service
     if curl -s -f http://localhost:3001/api/media/health > /dev/null; then
         print_status "✅ Media processing service health check passed"
@@ -463,6 +505,7 @@ main() {
     validate_gpu
     setup_directories
     build_rust_modules
+    build_cpp_modules
     deploy_application
     configure_nginx
     setup_ssl

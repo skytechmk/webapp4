@@ -21,6 +21,28 @@ export enum PostMessageErrorType {
   UNKNOWN_ERROR = 'UNKNOWN_ERROR'
 }
 
+let coopRecoveryTriggered = false;
+
+const recoverFromCoopIssue = async () => {
+  if (coopRecoveryTriggered) return;
+  coopRecoveryTriggered = true;
+
+  try {
+    if ('serviceWorker' in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(reg => reg.unregister()));
+    }
+    if ('caches' in window) {
+      const cacheNames = await caches.keys();
+      await Promise.all(cacheNames.map(name => caches.delete(name)));
+    }
+  } catch (error) {
+    console.warn('COOP recovery cleanup failed:', error);
+  }
+
+  window.location.reload();
+};
+
 // PostMessage Error Interface
 export interface PostMessageError extends Error {
   type: PostMessageErrorType;
@@ -157,6 +179,11 @@ export const handlePostMessageError = (error: PostMessageError, context: string,
     } catch (fallbackError) {
       console.error(`[POST_MESSAGE_ERROR] Fallback action failed:`, fallbackError);
     }
+  }
+
+  // If postMessage is blocked by COOP/COEP, force a clean reload to pick up relaxed headers/meta
+  if (error.type === PostMessageErrorType.BLOCKED_BY_COOP) {
+    recoverFromCoopIssue();
   }
 
   // Return error information for logging

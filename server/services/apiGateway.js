@@ -23,12 +23,13 @@ class ApiGateway {
             res.setHeader('X-XSS-Protection', '1; mode=block');
 
             // CORS and COOP headers to prevent postMessage blocking
-            res.setHeader('Cross-Origin-Opener-Policy', 'unsafe-none');
-            res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
-            res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
+            // Fully relaxed for Google Sign-In postMessage flow
+            res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
+            res.setHeader('Cross-Origin-Embedder-Policy', 'unsafe-none');
+            res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
 
             // Additional security headers
-            res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://unpkg.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' https:; connect-src 'self' ws://localhost:3001 https://snapify.mk; frame-src 'self' https://accounts.google.com;");
+            res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://unpkg.com https://accounts.google.com https://apis.google.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' https:; connect-src 'self' ws://localhost:3001 wss://snapify.mk https://snapify.mk https://accounts.google.com https://apis.google.com; frame-src 'self' https://accounts.google.com https://apis.google.com;");
 
             next();
         });
@@ -81,6 +82,7 @@ class ApiGateway {
     setupRoutes() {
         // Health check (no auth required)
         this.app.get('/api/health', (req, res) => {
+            res.setHeader('Cache-Control', 'public, max-age=3600');
             res.json({
                 status: 'ok',
                 timestamp: new Date().toISOString(),
@@ -166,6 +168,10 @@ class ApiGateway {
             // Rust routes (public for health checks)
             const rustRoutes = await import('../routes/rustRoutes.js');
             this.app.use('/api/rust', rustRoutes.default);
+
+            // C++ routes (public for health checks)
+            const cppRoutes = await import('../routes/cppRoutes.js');
+            this.app.use('/api/cpp', cppRoutes.default);
 
         } catch (error) {
             logger.error('Error loading routes:', { error: error.message, stack: error.stack });

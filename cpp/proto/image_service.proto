@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+package snapify;
+
+service ImageService {
+  rpc ProcessImage (ImageRequest) returns (ImageResponse);
+  rpc BatchProcess (BatchRequest) returns (BatchResponse);
+  rpc GetMetrics (MetricsRequest) returns (MetricsResponse);
+}
+
+message ImageRequest {
+  bytes image_data = 1;
+  string operation = 2;
+  map<string, string> parameters = 3;
+}
+
+message ImageResponse {
+  bytes processed_data = 1;
+  double processing_time = 2;
+  string status = 3;
+  string error_message = 4;
+}
+
+message BatchRequest {
+  repeated ImageRequest requests = 1;
+}
+
+message BatchResponse {
+  repeated ImageResponse responses = 1;
+  double total_time = 2;
+}
+
+message MetricsRequest {
+  // Empty for now
+}
+
+message MetricsResponse {
+  uint64 total_processed = 1;
+  double average_processing_time = 2;
+  uint64 active_connections = 3;
+  map<string, uint64> operation_counts = 4;
+}

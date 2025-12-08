@@ -1,0 +1,26 @@
+{
+    "name": "snapify/user-auth-service",
+    "description": "Type-safe user authentication service built with Hack",
+    "type": "project",
+    "require": {
+        "hhvm": "^4.0",
+        "ext-curl": "*",
+        "ext-json": "*",
+        "ext-pdo": "*",
+        "ext-sqlite3": "*"
+    },
+    "autoload": {
+        "psr-4": {
+            "Snapify\\UserAuth\\": "src/"
+        }
+    },
+    "scripts": {
+        "test": "hhvm vendor/bin/phpunit",
+        "typecheck": "hh_client"
+    },
+    "config": {
+        "platform": {
+            "hhvm": "4.0"
+        }
+    }
+}

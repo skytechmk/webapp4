@@ -10,6 +10,8 @@ import { BackgroundSyncPlugin } from 'workbox-background-sync';
 // Self-invoke to start the service worker
 declare const self: ServiceWorkerGlobalScope;
 
+const SW_VERSION = 'snapify-sw-1.1';
+
 // Enable clients to be controlled immediately
 clientsClaim();
 
@@ -30,11 +32,26 @@ try {
   });
 }
 
-// Set up navigation route to index.html
-const navigationRoute = new NavigationRoute(
-    createHandlerBoundToURL('index.html')
-);
-registerRoute(navigationRoute);
+// Set up navigation route to index.html with network-first so shell updates without manual cache clears
+const navigationHandler = async (params: { event: FetchEvent }) => {
+    const networkFirst = new NetworkFirst({
+        cacheName: 'snapify-shell-cache',
+        plugins: [
+            new CacheableResponsePlugin({ statuses: [0, 200] }),
+            new ExpirationPlugin({
+                maxEntries: 10,
+                maxAgeSeconds: 24 * 60 * 60, // 1 day
+            }),
+        ],
+    });
+
+    try {
+        return await networkFirst.handle(params);
+    } catch (error) {
+        return createHandlerBoundToURL('index.html')(params);
+    }
+};
+registerRoute(new NavigationRoute(navigationHandler));
 
 // Cache API responses with NetworkFirst strategy and enhanced error handling
 registerRoute(
@@ -179,12 +196,25 @@ self.addEventListener('activate', (event) => {
                 return caches.keys().then(cacheNames => {
                     return Promise.all(
                         cacheNames.map(cacheName => {
-                            if (cacheName !== 'workbox-precache' && cacheName !== 'snapify-api-cache' && cacheName !== 'snapify-cdn-cache' && cacheName !== 'snapify-assets-cache') {
+                            if (
+                                cacheName !== 'workbox-precache' &&
+                                cacheName !== 'snapify-api-cache' &&
+                                cacheName !== 'snapify-cdn-cache' &&
+                                cacheName !== 'snapify-assets-cache' &&
+                                cacheName !== 'snapify-shell-cache'
+                            ) {
                                 return caches.delete(cacheName);
                             }
                             return Promise.resolve();
                         })
                     );
+                }).then(() => {
+                    // Notify all clients that a new SW version is active so they can refresh if needed
+                    return self.clients.matchAll().then(clients => {
+                        clients.forEach(client => {
+                            client.postMessage({ type: 'SW_UPDATED', version: SW_VERSION });
+                        });
+                    });
                 });
             })
     );

@@ -12,3 +12,8 @@ declare module 'virtual:pwa-register/react' {
 declare module 'virtual:pwa-register' {
     export function registerSW(): void;
 }
+
+interface Window {
+    google?: any;
+    googleSignInInitialized?: boolean;
+}

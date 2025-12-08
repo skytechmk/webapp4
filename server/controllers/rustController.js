@@ -11,6 +11,7 @@ export const getRustStatus = async (req, res) => {
             processorAvailable: rustImageService.rustProcessor !== null
         };
 
+        res.setHeader('Cache-Control', 'public, max-age=3600');
         res.json({
             status: 'ok',
             service: 'rust',

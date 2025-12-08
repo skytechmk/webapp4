@@ -5,6 +5,7 @@ import { uploadToS3, deleteFromS3, getS3Object } from './storage.js';
 import sharp from 'sharp';
 import rustImageService from './rustImageService.js';
 import gpuImageService from './gpuImageService.js';
+import cppImageService from './cppImageService.js';
 import path from 'path';
 import fs from 'fs';
 
@@ -40,7 +41,79 @@ class MediaService {
 
     // Process and optimize image
     async processImage(buffer, options = {}) {
-        // Try GPU processing first, then Rust CPU, then Sharp as final fallback
+        const { processingMode = 'auto' } = options;
+
+        switch (processingMode) {
+            case 'gpu':
+                return await this.processWithGpu(buffer, options);
+            case 'cpu':
+                return await this.processWithCpu(buffer, options);
+            case 'hybrid':
+                return await this.processHybrid(buffer, options);
+            case 'auto':
+            default:
+                return await this.processAuto(buffer, options);
+        }
+    }
+
+    // GPU-only processing
+    async processWithGpu(buffer, options = {}) {
+        try {
+            if (gpuImageService.isGpuAvailable()) {
+                return await gpuImageService.processImage(buffer, options);
+            } else {
+                throw new Error('GPU not available');
+            }
+        } catch (error) {
+            console.warn('GPU processing failed:', error);
+            throw error; // Don't fallback in GPU-only mode
+        }
+    }
+
+    // CPU-only processing (Rust + C++)
+    async processWithCpu(buffer, options = {}) {
+        try {
+            return await rustImageService.processImage(buffer, options);
+        } catch (error) {
+            console.warn('Rust CPU processing failed, trying C++:', error);
+            try {
+                return await cppImageService.processImage(buffer, options);
+            } catch (cppError) {
+                console.warn('C++ processing failed, falling back to Sharp:', cppError);
+                return this.fallbackToSharp(buffer, options);
+            }
+        }
+    }
+
+    // Hybrid processing - combines GPU and CPU optimizations
+    async processHybrid(buffer, options = {}) {
+        const { operation = 'resize' } = options;
+
+        // For advanced operations, prefer C++ processor with SIMD/AVX
+        if (['hdr', 'tone_mapping', 'exposure_fusion', 'edge_detection', 'simd_optimize'].includes(operation)) {
+            try {
+                return await cppImageService.processImage(buffer, { ...options, operation });
+            } catch (error) {
+                console.warn('C++ hybrid processing failed:', error);
+            }
+        }
+
+        // For basic resize operations, try GPU first, then CPU
+        try {
+            if (gpuImageService.isGpuAvailable()) {
+                return await gpuImageService.processImage(buffer, options);
+            }
+        } catch (error) {
+            console.warn('GPU hybrid processing failed, trying CPU:', error);
+        }
+
+        // Fallback to CPU processing
+        return await this.processWithCpu(buffer, options);
+    }
+
+    // Auto processing - intelligent fallback chain
+    async processAuto(buffer, options = {}) {
+        // Try GPU processing first
         try {
             if (gpuImageService.isGpuAvailable()) {
                 return await gpuImageService.processImage(buffer, options);
@@ -49,10 +122,18 @@ class MediaService {
             console.warn('GPU processing failed, trying CPU processing:', error);
         }
 
+        // Try Rust CPU processing
         try {
             return await rustImageService.processImage(buffer, options);
         } catch (error) {
-            console.warn('Rust CPU processing failed, falling back to Sharp:', error);
+            console.warn('Rust CPU processing failed, trying C++ processing:', error);
+        }
+
+        // Try C++ processing as additional CPU option
+        try {
+            return await cppImageService.processImage(buffer, options);
+        } catch (error) {
+            console.warn('C++ processing failed, falling back to Sharp:', error);
             return this.fallbackToSharp(buffer, options);
         }
     }
@@ -334,9 +415,11 @@ class MediaService {
     getProcessingStats() {
         return {
             gpu: gpuImageService.getGpuStats(),
+            cpp: cppImageService.getMetrics(),
             services: {
                 gpu: gpuImageService.isGpuAvailable(),
                 rust: true, // rustImageService is always available
+                cpp: cppImageService.initialized && cppImageService.cppProcessor !== null,
                 sharp: true // Sharp is always available as fallback
             }
         };

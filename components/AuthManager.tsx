@@ -356,7 +356,11 @@ export const AuthManager: React.FC<AuthManagerProps> = ({
                 // Initialize Google Sign-In client
                 window.google.accounts.id.initialize({
                     client_id: process.env.VITE_GOOGLE_CLIENT_ID,
-                    callback: handleGoogleResponse
+                    callback: handleGoogleResponse,
+                    ux_mode: 'popup',
+                    use_fedcm_for_prompt: false,
+                    auto_select: false,
+                    cancel_on_tap_outside: false
                 });
 
                 // Validate initialization was successful

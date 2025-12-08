@@ -21,13 +21,17 @@ fn gpu_processor_get_device_count(mut cx: FunctionContext) -> JsResult<JsNumber>
 }
 
 fn gpu_processor_resize_image(mut cx: FunctionContext) -> JsResult<JsNumber> {
-    println!("GPU processor resize_image called with input: {}x{}, output: {}x{}", input_width, input_height, output_width, output_height);
     let input_data = cx.argument::<JsBuffer>(0)?;
     let input_width = cx.argument::<JsNumber>(1)?.value(&mut cx) as usize;
     let input_height = cx.argument::<JsNumber>(2)?.value(&mut cx) as usize;
     let output_width = cx.argument::<JsNumber>(3)?.value(&mut cx) as usize;
     let output_height = cx.argument::<JsNumber>(4)?.value(&mut cx) as usize;
     let output_buffer = cx.argument::<JsBuffer>(5)?;
+
+    println!(
+        "GPU processor resize_image called with input: {}x{}, output: {}x{}",
+        input_width, input_height, output_width, output_height
+    );
 
     let device = match CUDA_DEVICE.as_ref() {
         Some(dev) => dev,

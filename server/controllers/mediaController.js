@@ -111,6 +111,7 @@ export const getUploadStatus = (req, res) => {
     const { uploadId } = req.params;
     const progress = getUploadProgress(uploadId);
 
+    res.setHeader('Cache-Control', 'public, max-age=3600');
     res.json({
         uploadId,
         ...progress
@@ -195,6 +196,7 @@ export const getMediaById = (req, res) => {
             isProcessing: !!row.isProcessing
         };
 
+        res.setHeader('Cache-Control', 'public, max-age=3600');
         res.json(mediaItem);
     });
 };
@@ -215,6 +217,7 @@ export const getMediaHealth = async (req, res) => {
         const mediaService = (await import('../services/mediaService.js')).default;
         const stats = mediaService.getProcessingStats();
 
+        res.setHeader('Cache-Control', 'public, max-age=3600');
         res.json({
             status: 'ok',
             service: 'media',

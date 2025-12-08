@@ -1,0 +1,26 @@
+{
+    "name": "snapify/analytics-service",
+    "description": "Type-safe analytics service built with Hack",
+    "type": "project",
+    "require": {
+        "hhvm": "^4.0",
+        "ext-curl": "*",
+        "ext-json": "*",
+        "ext-pdo": "*",
+        "ext-sqlite3": "*"
+    },
+    "autoload": {
+        "psr-4": {
+            "Snapify\\Analytics\\": "src/"
+        }
+    },
+    "scripts": {
+        "test": "hhvm vendor/bin/phpunit",
+        "typecheck": "hh_client"
+    },
+    "config": {
+        "platform": {
+            "hhvm": "4.0"
+        }
+    }
+}

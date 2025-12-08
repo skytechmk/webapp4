@@ -1,302 +1,310 @@
-import { User, Event, MediaItem, GuestbookEntry, Comment, Vendor } from '../types';
+interface RetryOptions {
+    maxRetries?: number;
+    baseDelay?: number;
+    maxDelay?: number;
+}
 
-// @ts-ignore
-const API_URL = import.meta.env.VITE_API_URL || (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3001');
+interface ApiOptions extends RequestInit {
+    retry?: RetryOptions;
+}
 
-export const handleApiRequest = async <T = any>(path: string, init: RequestInit = {}): Promise<T> => {
-    const res = await fetch(`${API_URL}${path}`, init);
-    if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`API request failed (${res.status}): ${text}`);
-    }
-    try {
-        return await res.json();
-    } catch {
+class ApiClient {
+    private ongoingRequests: Map<string, Promise<any>> = new Map();
+    private baseUrl: string;
+
+    constructor() {
+        // Prefer explicit API URL, otherwise default to current origin
         // @ts-ignore
-        return null;
-    }
-};
-
-const getAuthHeaders = () => {
-    const token = localStorage.getItem('snapify_token');
-    return token ? { 'Authorization': `Bearer ${token}` } : {};
-};
-
-export const api = {
-    // ... existing methods (User, Auth, etc.) ...
-    fetchUser: async (id: string): Promise<User | undefined> => {
-        try {
-            const users = await api.fetchUsers();
-            return users.find(u => u.id === id);
-        } catch {
-            return undefined;
+        const envUrl = (import.meta as any)?.env?.VITE_API_URL;
+        if (envUrl) {
+            try {
+                const parsed = new URL(envUrl);
+                const envOrigin = parsed.origin;
+                // Prefer same-origin in browser to avoid CORS/cookie issues if env points elsewhere
+                if (typeof window !== 'undefined' && window.location?.origin && window.location.origin !== envOrigin) {
+                    this.baseUrl = window.location.origin;
+                } else {
+                    this.baseUrl = envOrigin + parsed.pathname.replace(/\/$/, '');
+                }
+            } catch {
+                this.baseUrl = envUrl.replace(/\/$/, '');
+            }
+        } else if (typeof window !== 'undefined' && window.location?.origin) {
+            this.baseUrl = window.location.origin;
+        } else {
+            this.baseUrl = '';
         }
-    },
+    }
 
-    fetchUsers: async (): Promise<User[]> => {
-        const res = await fetch(`${API_URL}/api/users`, { headers: { ...getAuthHeaders() } });
-        return res.json();
-    },
+    private getAuthHeaders(): Record<string, string> {
+        if (typeof window === 'undefined') return {};
+        try {
+            const token = localStorage.getItem('snapify_token');
+            return token ? { Authorization: `Bearer ${token}` } : {};
+        } catch {
+            return {};
+        }
+    }
 
-    login: async (email: string, password?: string): Promise<{ token: string, user: User }> => {
-        const res = await fetch(`${API_URL}/api/auth/login`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email, password })
-        });
-        if (!res.ok) throw new Error("Invalid credentials");
-        return res.json();
-    },
+    private generateRequestKey(url: string, options: ApiOptions): string {
+        // Create a unique key based on URL and relevant options
+        const keyData = {
+            url,
+            method: options.method || 'GET',
+            body: options.body,
+            headers: options.headers
+        };
+        return JSON.stringify(keyData);
+    }
 
-    googleLogin: async (credential: string): Promise<{ token: string, user: User }> => {
-        const res = await fetch(`${API_URL}/api/auth/google`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ credential })
-        });
-        if (!res.ok) throw new Error("Google login failed");
-        return res.json();
-    },
+    private isRetryableError(status: number): boolean {
+        return status >= 500 || status === 429;
+    }
 
-    createUser: async (user: User): Promise<{ token: string, user: User }> => {
-        const res = await fetch(`${API_URL}/api/users`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(user)
-        });
-        if (!res.ok) throw new Error("Registration failed");
-        return res.json();
-    },
+    private async delay(ms: number): Promise<void> {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
 
-    updateUser: async (user: User): Promise<void> => {
-        await fetch(`${API_URL}/api/users/${user.id}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-            body: JSON.stringify(user)
-        });
-    },
-    deleteUser: async (id: string): Promise<void> => {
-        await fetch(`${API_URL}/api/users/${id}`, { method: 'DELETE', headers: { ...getAuthHeaders() } });
-    },
+    private async makeRequestWithRetry(url: string, options: ApiOptions): Promise<Response> {
+        const { retry = {}, ...fetchOptions } = options;
+        const { maxRetries = 3, baseDelay = 1000, maxDelay = 10000 } = retry;
 
-    // --- EVENTS ---
-    fetchEvents: async (): Promise<Event[]> => {
-        const res = await fetch(`${API_URL}/api/events`, { headers: { ...getAuthHeaders() } });
-        if (!res.ok) return [];
-        const data = await res.json();
-        return data.map((e: any) => ({
-            ...e,
-            media: e.media.map((m: any) => ({ ...m, isWatermarked: !!m.isWatermarked }))
-        }));
-    },
+        let lastError: Error;
 
-    fetchEventById: async (eventId: string): Promise<Event> => {
-        console.log('fetchEventById called for:', eventId);
-        const headers = getAuthHeaders();
-        console.log('Auth headers for event fetch:', headers);
-        const res = await fetch(`${API_URL}/api/events/${eventId}`, {
+        for (let attempt = 0; attempt <= maxRetries; attempt++) {
+            try {
+                const response = await fetch(url, fetchOptions);
+
+                if (!this.isRetryableError(response.status)) {
+                    return response;
+                }
+
+                if (attempt < maxRetries) {
+                    // Exponential backoff: 1s, 2s, 4s
+                    const delayMs = Math.min(baseDelay * Math.pow(2, attempt), maxDelay);
+                    await this.delay(delayMs);
+                } else {
+                    // Last attempt failed with retryable error
+                    return response;
+                }
+            } catch (error) {
+                lastError = error as Error;
+                if (attempt < maxRetries) {
+                    const delayMs = Math.min(baseDelay * Math.pow(2, attempt), maxDelay);
+                    await this.delay(delayMs);
+                }
+            }
+        }
+
+        throw lastError!;
+    }
+
+    async makeRequest(url: string, options: ApiOptions = {}): Promise<any> {
+        const requestKey = this.generateRequestKey(url, options);
+
+        // Check for ongoing request
+        if (this.ongoingRequests.has(requestKey)) {
+            return this.ongoingRequests.get(requestKey);
+        }
+
+        // Create new request promise
+        const requestPromise = this.makeRequestWithRetry(url, options)
+            .then(async (response) => {
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`HTTP ${response.status}: ${errorText}`);
+                }
+                return response.json();
+            })
+            .finally(() => {
+                // Clean up the ongoing request
+                this.ongoingRequests.delete(requestKey);
+            });
+
+        // Store the ongoing request
+        this.ongoingRequests.set(requestKey, requestPromise);
+
+        return requestPromise;
+    }
+
+    // Convenience methods
+    async get(url: string, options: ApiOptions = {}): Promise<any> {
+        return this.makeRequest(url, {
+            ...options,
+            method: 'GET',
             headers: {
-                'Content-Type': 'application/json',
-                ...headers
+                ...this.getAuthHeaders(),
+                ...options.headers
             }
         });
-        console.log('Event fetch response status:', res.status);
-        if (!res.ok) {
-            const errorText = await res.text();
-            console.error('Event fetch failed:', res.status, errorText);
-            throw new Error(`Failed to fetch event: ${res.status}`);
-        }
-        const data = await res.json();
-        console.log('Event data received:', data.title);
-        return {
-            ...data,
-            media: data.media.map((m: any) => ({ ...m, isWatermarked: !!m.isWatermarked }))
-        };
-    },
+    }
 
-    createEvent: async (event: Event): Promise<Event> => {
-        const res = await fetch(`${API_URL}/api/events`, {
+    async post(url: string, data: any, options: ApiOptions = {}): Promise<any> {
+        return this.makeRequest(url, {
+            ...options,
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-            body: JSON.stringify(event)
+            headers: {
+                'Content-Type': 'application/json',
+                ...this.getAuthHeaders(),
+                ...options.headers
+            },
+            body: JSON.stringify(data)
         });
-        return res.json();
-    },
+    }
 
-    updateEvent: async (event: Event): Promise<void> => {
-        await fetch(`${API_URL}/api/events/${event.id}`, {
+    async put(url: string, data: any, options: ApiOptions = {}): Promise<any> {
+        return this.makeRequest(url, {
+            ...options,
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-            body: JSON.stringify(event)
+            headers: {
+                'Content-Type': 'application/json',
+                ...this.getAuthHeaders(),
+                ...options.headers
+            },
+            body: JSON.stringify(data)
         });
-    },
+    }
 
-    // --- FEEDBACK & SUPPORT (admin stubs) ---
-    submitFeedback: async (payload: any): Promise<{ success: boolean; feedbackId?: string }> => {
-        return handleApiRequest('/api/feedback', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-            body: JSON.stringify(payload)
+    async delete(url: string, options: ApiOptions = {}): Promise<any> {
+        return this.makeRequest(url, {
+            ...options,
+            method: 'DELETE',
+            headers: {
+                ...this.getAuthHeaders(),
+                ...options.headers
+            }
         });
-    },
-    getAllFeedback: async (): Promise<any[]> => {
-        return handleApiRequest('/api/feedback', { headers: { ...getAuthHeaders() } }) || [];
-    },
-    updateFeedbackStatus: async (id: string, status: string): Promise<void> => {
-        await handleApiRequest(`/api/feedback/${id}/status`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-            body: JSON.stringify({ status })
-        });
-    },
-    getSupportMessages: async (): Promise<any[]> => {
-        return handleApiRequest('/api/support/messages', { headers: { ...getAuthHeaders() } });
-    },
-    sendAdminReply: async (messageId: string, reply: string): Promise<void> => {
-        await handleApiRequest('/api/support/reply', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-            body: JSON.stringify({ messageId, reply })
-        });
-    },
-    markMessageAsRead: async (messageId: string): Promise<void> => {
-        await handleApiRequest(`/api/support/messages/${messageId}/read`, {
-            method: 'POST',
-            headers: { ...getAuthHeaders() }
-        });
-    },
+    }
 
-    // --- SYSTEM MAINTENANCE (stubs) ---
-    getSystemStorage: async (): Promise<any> => {
-        return handleApiRequest('/api/system/storage', { headers: { ...getAuthHeaders() } });
-    },
-    getSystemResources: async (): Promise<any> => {
-        return handleApiRequest('/api/system/resources', { headers: { ...getAuthHeaders() } });
-    },
-    cleanMinIOBucket: async (): Promise<{ deletedCount: number; totalSize: string }> => {
-        return handleApiRequest('/api/system/clean-bucket', { method: 'POST', headers: { ...getAuthHeaders() } });
-    },
-    clearUsersDatabase: async (): Promise<{ adminPreserved: boolean; totalDeleted: number }> => {
-        return handleApiRequest('/api/system/clear-users', { method: 'POST', headers: { ...getAuthHeaders() } });
-    },
+    // --- Domain-specific helpers ---
+    async login(email: string, password: string) {
+        const url = `${this.baseUrl}/api/auth/login`;
+        return this.post(url, { email, password }, { headers: {} });
+    }
 
-    deleteEvent: async (id: string): Promise<void> => {
-        await fetch(`${API_URL}/api/events/${id}`, { method: 'DELETE', headers: { ...getAuthHeaders() } });
-    },
+    async register(user: any) {
+        const url = `${this.baseUrl}/api/auth/register`;
+        return this.post(url, user, { headers: {} });
+    }
 
-    validateEventPin: async (id: string, pin: string): Promise<boolean> => {
-        const res = await fetch(`${API_URL}/api/events/${id}/validate-pin`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ pin })
-        });
-        const data = await res.json();
-        return data.success;
-    },
+    async googleLogin(credential: string) {
+        const url = `${this.baseUrl}/api/auth/google`;
+        return this.post(url, { credential }, { headers: {} });
+    }
 
-    // --- VENDORS (NEW) ---
-    fetchVendors: async (city?: string): Promise<Vendor[]> => {
-        let url = `${API_URL}/api/vendors`;
-        if (city) url += `?city=${encodeURIComponent(city)}`;
-        const res = await fetch(url);
-        if (!res.ok) return [];
-        return res.json();
-    },
+    async fetchEvents() {
+        const url = `${this.baseUrl}/api/events`;
+        return this.get(url);
+    }
 
-    // --- MEDIA & AI ---
-    uploadMedia: async (file: File, metadata: Partial<MediaItem>, eventId: string, onProgress?: (percent: number) => void): Promise<MediaItem> => {
+    async fetchEventById(id: string) {
+        const url = `${this.baseUrl}/api/events/${id}`;
+        return this.get(url, { headers: {} });
+    }
+
+    async createEvent(event: any) {
+        const url = `${this.baseUrl}/api/events`;
+        return this.post(url, event);
+    }
+
+    async updateEvent(event: any) {
+        const url = `${this.baseUrl}/api/events/${event.id}`;
+        return this.put(url, event);
+    }
+
+    async deleteEvent(id: string) {
+        const url = `${this.baseUrl}/api/events/${id}`;
+        return this.delete(url);
+    }
+
+    async incrementEventView(eventId: string) {
+        const url = `${this.baseUrl}/api/events/${eventId}/view`;
+        return this.post(url, {});
+    }
+
+    async fetchUsers() {
+        const url = `${this.baseUrl}/api/users`;
+        return this.get(url);
+    }
+
+    async fetchUser(id: string) {
+        const url = `${this.baseUrl}/api/users/${id}`;
+        return this.get(url);
+    }
+
+    async updateUser(user: any) {
+        const url = `${this.baseUrl}/api/users/${user.id}`;
+        return this.put(url, user);
+    }
+
+    async deleteUser(id: string) {
+        const url = `${this.baseUrl}/api/users/${id}`;
+        return this.delete(url);
+    }
+
+    async likeMedia(mediaId: string) {
+        const url = `${this.baseUrl}/api/media/${mediaId}/like`;
+        return this.put(url, {});
+    }
+
+    async deleteMedia(mediaId: string) {
+        const url = `${this.baseUrl}/api/media/${mediaId}`;
+        return this.delete(url);
+    }
+
+    async bulkDeleteMedia(mediaIds: string[]) {
+        const url = `${this.baseUrl}/api/media/bulk-delete`;
+        return this.post(url, { mediaIds });
+    }
+
+    async uploadMedia(file: File, metadata: any, eventId: string, onProgress?: (percent: number) => void) {
+        const url = `${this.baseUrl}/api/media`;
         const formData = new FormData();
         formData.append('file', file);
-        formData.append('id', metadata.id!);
         formData.append('eventId', eventId);
-        formData.append('type', metadata.type!);
-        formData.append('caption', metadata.caption || '');
-        formData.append('uploadedAt', metadata.uploadedAt!);
-        formData.append('uploaderName', metadata.uploaderName!);
-        formData.append('uploaderId', metadata.uploaderId || '');
-        formData.append('isWatermarked', String(metadata.isWatermarked));
-        formData.append('watermarkText', metadata.watermarkText || '');
-        formData.append('privacy', metadata.privacy || 'public');
+        Object.entries(metadata || {}).forEach(([key, value]) => {
+            formData.append(key, value as any);
+        });
+
+        const headers = this.getAuthHeaders();
 
         return new Promise((resolve, reject) => {
             const xhr = new XMLHttpRequest();
-            xhr.open('POST', `${API_URL}/api/media`);
-            const token = localStorage.getItem('snapify_token');
-            if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
-
-            if (onProgress) {
-                xhr.upload.onprogress = (event) => {
-                    if (event.lengthComputable) onProgress(Math.round((event.loaded / event.total) * 100));
-                };
-            }
-
+            xhr.open('POST', url, true);
+            Object.entries(headers).forEach(([k, v]) => xhr.setRequestHeader(k, v));
+            xhr.upload.onprogress = (e) => {
+                if (onProgress && e.lengthComputable) {
+                    const percent = Math.round((e.loaded / e.total) * 100);
+                    onProgress(percent);
+                }
+            };
             xhr.onload = () => {
                 if (xhr.status >= 200 && xhr.status < 300) {
-                    try { resolve(JSON.parse(xhr.responseText)); } catch (e) { reject(new Error('Invalid JSON response')); }
-                } else { reject(new Error(xhr.statusText)); }
+                    try {
+                        resolve(JSON.parse(xhr.responseText));
+                    } catch (err) {
+                        reject(err);
+                    }
+                } else {
+                    reject(new Error(`Upload failed with status ${xhr.status}`));
+                }
             };
-            xhr.onerror = () => reject(new Error('Network error'));
+            xhr.onerror = () => reject(new Error('Network error during upload'));
             xhr.send(formData);
         });
-    },
-
-    generateImageCaption: async (base64Image: string): Promise<string> => {
-        const res = await fetch(`${API_URL}/api/ai/generate-caption`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-            body: JSON.stringify({ base64Image })
-        });
-        const data = await res.json();
-        return data.caption || "Captured moment";
-    },
-
-    generateEventDescription: async (title: string, date: string, type: string): Promise<string> => {
-        const res = await fetch(`${API_URL}/api/ai/generate-event-description`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-            body: JSON.stringify({ title, date, type })
-        });
-        const data = await res.json();
-        return data.description || "Join us for an amazing celebration!";
-    },
-
-    likeMedia: async (id: string): Promise<void> => { await fetch(`${API_URL}/api/media/${id}/like`, { method: 'PUT' }); },
-    deleteMedia: async (id: string): Promise<void> => { await fetch(`${API_URL}/api/media/${id}`, { method: 'DELETE', headers: { ...getAuthHeaders() } }); },
-
-    bulkDeleteMedia: async (mediaIds: string[]): Promise<{ success: boolean; deletedCount: number }> => {
-        const res = await fetch(`${API_URL}/api/media/bulk-delete`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-            body: JSON.stringify({ mediaIds })
-        });
-        const data = await res.json();
-        return { success: data.success || false, deletedCount: data.deletedCount || 0 };
-    },
-
-    addGuestbookEntry: async (entry: GuestbookEntry): Promise<GuestbookEntry> => {
-        const res = await fetch(`${API_URL}/api/guestbook`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(entry)
-        });
-        return res.json();
-    },
-
-    addComment: async (comment: Comment): Promise<Comment> => {
-        const res = await fetch(`${API_URL}/api/comments`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(comment)
-        });
-        return res.json();
-    },
-
-    resetSystem: async (): Promise<void> => {
-        const res = await fetch(`${API_URL}/api/admin/reset`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-            body: JSON.stringify({ confirmation: 'RESET_CONFIRM' })
-        });
-        if (!res.ok) throw new Error("Failed to reset system");
     }
-};
+
+    async generateImageCaption(imageData: string) {
+        const url = `${this.baseUrl}/api/ai/generate-caption`;
+        return this.post(url, { imageData });
+    }
+
+    async generateEventDescription(title: string, theme?: string) {
+        const url = `${this.baseUrl}/api/ai/generate-event-description`;
+        return this.post(url, { title, theme });
+    }
+}
+
+export const apiClient = new ApiClient();
+export const api = apiClient;
+export default apiClient;

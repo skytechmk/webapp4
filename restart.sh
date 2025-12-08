@@ -181,6 +181,13 @@ else
     print_warning "⚠️  Rust modules health check failed"
 fi
 
+# Check C++ modules
+if check_health "https://snapify.mk/api/cpp/status"; then
+    print_status "✅ C++ modules health check passed"
+else
+    print_warning "⚠️  C++ modules health check failed"
+fi
+
 # Check media processing
 if check_health "https://snapify.mk/api/media/health"; then
     print_status "✅ Media processing health check passed"

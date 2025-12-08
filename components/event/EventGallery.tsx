@@ -17,6 +17,7 @@ import { SearchBar } from './components/SearchBar';
 import { FindMeModal } from './components/FindMeModal';
 import { ShareModal } from './modals/ShareModal';
 import { VideoGridItem } from './components/VideoGridItem';
+import { socketService } from '../../services/socketService';
 
 interface EventGalleryProps {
     event: Event;
@@ -78,6 +79,56 @@ export const EventGallery = React.memo<EventGalleryProps>(({
             });
         }
     }, [event.media, localMedia]);
+
+    // Real-time media updates via Socket.IO
+    useEffect(() => {
+        if (!event.id) return;
+
+        // Join the event room for real-time updates
+        socketService.joinEvent(event.id);
+
+        // Listen for new media uploads
+        const handleMediaUploaded = (newMedia: MediaItem) => {
+            console.log('📸 Real-time media uploaded:', newMedia.id);
+            // Format URLs for the frontend
+            const formattedMedia = {
+                ...newMedia,
+                url: newMedia.url ? `/api/proxy-media?key=${encodeURIComponent(newMedia.url)}` : newMedia.url,
+                previewUrl: newMedia.previewUrl ? `/api/proxy-media?key=${encodeURIComponent(newMedia.previewUrl)}` : newMedia.previewUrl
+            };
+            useEventStore.getState().addMediaToEvent(event.id, formattedMedia);
+        };
+
+        // Listen for media processing updates (thumbnail ready, etc.)
+        const handleMediaProcessed = (processedMedia: { id: string; previewUrl: string; url: string }) => {
+            console.log('⚙️ Real-time media processed:', processedMedia.id);
+            // Format URLs for the frontend
+            const updates = {
+                url: processedMedia.url ? `/api/proxy-media?key=${encodeURIComponent(processedMedia.url)}` : processedMedia.url,
+                previewUrl: processedMedia.previewUrl ? `/api/proxy-media?key=${encodeURIComponent(processedMedia.previewUrl)}` : processedMedia.previewUrl,
+                isProcessing: false
+            };
+            useEventStore.getState().updateMediaInEvent(event.id, processedMedia.id, updates);
+        };
+
+        // Listen for upload progress updates
+        const handleUploadProgress = (progress: { uploadId: string; status: string; progress: number; error?: string }) => {
+            console.log('📊 Upload progress:', progress.uploadId, progress.status, progress.progress + '%');
+            // Could update UI with progress indicators if needed
+        };
+
+        // Register event listeners
+        socketService.on('media_uploaded', handleMediaUploaded);
+        socketService.on('media_processed', handleMediaProcessed);
+        socketService.on('upload_progress', handleUploadProgress);
+
+        // Cleanup function
+        return () => {
+            socketService.off('media_uploaded', handleMediaUploaded);
+            socketService.off('media_processed', handleMediaProcessed);
+            socketService.off('upload_progress', handleUploadProgress);
+        };
+    }, [event.id]);
 
     useEffect(() => {
         if (event.guestbook !== localGuestbook) {

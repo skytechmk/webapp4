@@ -126,6 +126,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({
     const googleButtonRef = useRef<HTMLDivElement>(null);
     const mottoRef = useRef<HTMLHeadingElement>(null);
     const [dynamicFontSize, setDynamicFontSize] = useState('7vw');
+    // @ts-ignore
+    const env: any = (import.meta as any)?.env || {};
 
     // Form State
     const [isSignUp, setIsSignUp] = useState(false);
@@ -178,6 +180,13 @@ export const LandingPage: React.FC<LandingPageProps> = ({
     // Render Google Button with Initialization Validation
     useEffect(() => {
         const renderGoogleButton = () => {
+            // Wait for global initialization
+            if (!window.googleSignInInitialized) {
+                console.log('GSI not initialized yet, waiting for event...');
+                return;
+            }
+
+            // Validate GSI initialization state
             // Validate GSI initialization state
             const validation = validateGsiInitialization();
 

@@ -53,7 +53,7 @@ export default defineConfig({
         display_override: ['window-controls-overlay', 'standalone', 'minimal-ui']
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
+        globPatterns: ['**/*.{js,css,ico,png,svg}'],
         maximumFileSizeToCacheInBytes: 10 * 1024 * 1024, // 10 MB limit
         skipWaiting: true,
         clientsClaim: true,
@@ -67,6 +67,21 @@ export default defineConfig({
               expiration: {
                 maxEntries: 500,
                 maxAgeSeconds: 60 * 60 * 24 * 30,
+              },
+              cacheableResponse: {
+                statuses: [0, 200]
+              }
+            }
+          },
+          {
+            urlPattern: ({ request }) => request.mode === 'navigate',
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'snapify-html-cache',
+              networkTimeoutSeconds: 3,
+              expiration: {
+                maxEntries: 1,
+                maxAgeSeconds: 0, // Do not cache
               },
               cacheableResponse: {
                 statuses: [0, 200]

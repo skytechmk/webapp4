@@ -1,0 +1,82 @@
+version: '3.8'
+
+services:
+  hack-event-service:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    ports:
+      - "8081:8080"
+    volumes:
+      - ../services/event-management:/var/www/snapify/hack/services/event-management
+      - ../shared:/var/www/snapify/hack/shared
+    environment:
+      - SERVICE_NAME=event-management
+      - NODEJS_SERVICE_URL=http://host.docker.internal:3000
+      - REDIS_URL=redis://host.docker.internal:6379
+      - DATABASE_URL=sqlite:///var/www/snapify/hack/services/event-management/data/events.db
+    depends_on:
+      - redis
+    networks:
+      - snapify-network
+    restart: unless-stopped
+
+  hack-user-auth-service:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    ports:
+      - "8082:8080"
+    volumes:
+      - ../services/user-auth:/var/www/snapify/hack/services/user-auth
+      - ../shared:/var/www/snapify/hack/shared
+    environment:
+      - SERVICE_NAME=user-auth
+      - NODEJS_SERVICE_URL=http://host.docker.internal:3000
+      - REDIS_URL=redis://host.docker.internal:6379
+      - DATABASE_URL=sqlite:///var/www/snapify/hack/services/user-auth/data/users.db
+    depends_on:
+      - redis
+    networks:
+      - snapify-network
+    restart: unless-stopped
+
+  hack-analytics-service:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    ports:
+      - "8083:8080"
+    volumes:
+      - ../services/analytics:/var/www/snapify/hack/services/analytics
+      - ../shared:/var/www/snapify/hack/shared
+    environment:
+      - SERVICE_NAME=analytics
+      - NODEJS_SERVICE_URL=http://host.docker.internal:3000
+      - REDIS_URL=redis://host.docker.internal:6379
+      - DATABASE_URL=sqlite:///var/www/snapify/hack/services/analytics/data/analytics.db
+    depends_on:
+      - redis
+    networks:
+      - snapify-network
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - snapify-network
+    restart: unless-stopped
+
+volumes:
+  redis_data:
+
+networks:
+  snapify-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

@@ -453,6 +453,7 @@ export const getSystemHealth = async (_req, res) => {
     try {
         const disk = await getSystemDiskUsage();
 
+        res.setHeader('Cache-Control', 'public, max-age=3600');
         res.json({
             status: 'ok',
             service: 'system',

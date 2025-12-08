@@ -21,11 +21,7 @@ const getApiUrl = (): string => {
   const defaultUrl = isDev ? 'http://localhost:3001' : '';
 
   if (!defaultUrl) {
-    console.error('CRITICAL: No API URL configured. Set VITE_API_URL environment variable.');
-    // Only throw in development if no URL is configured
-    if (isDev) {
-      throw new Error('API URL not configured. Contact administrator.');
-    }
+    throw new Error('CRITICAL: No API URL configured. Set VITE_API_URL environment variable.');
   }
 
   return defaultUrl;
@@ -60,7 +56,6 @@ class SocketService {
     reconnectionAttempts: 0
   };
   private eventListeners: Map<string, ((data: any) => void)[]> = new Map();
-  private reconnectionTimeout: NodeJS.Timeout | null = null;
   private userToken: string | null = null;
 
   // Enhanced connection with exponential backoff and proper error handling
@@ -100,17 +95,18 @@ class SocketService {
       this.connectionStats.isConnecting = false;
       this.connectionStats.lastError = error.message;
       console.error('❌ WebSocket connection initialization failed:', error.message);
-      this.scheduleReconnection();
     }
   }
 
   private getSocketOptions(isMobile: boolean) {
-    // Prioritize polling for reliable connections through proxies/firewalls, fallback to WebSocket
-    // This fixes connection issues where WebSocket was blocked or unavailable
-    const transports = ['polling', 'websocket'];
+    // Prioritize WebSocket for better performance, fallback to polling
+    // This ensures faster connections when WebSocket is available
+    const transports = ['websocket', 'polling'];
 
     return {
       transports,
+      pingTimeout: 60000,
+      pingInterval: 25000,
       timeout: isMobile ? 30000 : 20000,
       forceNew: false,
       reconnection: true,
@@ -148,11 +144,6 @@ class SocketService {
       }
     }
 
-    // Clear any pending reconnection
-    if (this.reconnectionTimeout) {
-      clearTimeout(this.reconnectionTimeout);
-      this.reconnectionTimeout = null;
-    }
   }
 
   private setupSocketEventListeners() {
@@ -189,11 +180,8 @@ class SocketService {
     this.connectionStats.reconnectionAttempts = 0;
     console.log('🔌 WebSocket connected successfully');
 
-    // Clear any pending reconnection
-    if (this.reconnectionTimeout) {
-      clearTimeout(this.reconnectionTimeout);
-      this.reconnectionTimeout = null;
-    }
+    // Ensure event listeners are preserved across reconnections
+    this.reestablishEventListeners();
 
     // Authenticate if we have a token
     if (this.userToken) {
@@ -211,14 +199,10 @@ class SocketService {
     console.warn('🔌 WebSocket disconnected:', reason);
     this.connectionStats.lastError = `Disconnected: ${reason}`;
 
-    // Don't auto-reconnect if user intentionally disconnected or navigated away
-    if (reason === 'io client disconnect' || reason === 'io server disconnect' || document.hidden) {
+    // Don't clean up if socket.io will handle reconnection
+    if (reason === 'io client disconnect' || reason === 'io server disconnect') {
       this.cleanupExistingConnection();
-      return;
     }
-
-    // Schedule reconnection with exponential backoff
-    this.scheduleReconnection();
   }
 
   private handleConnectError(error: Error) {
@@ -227,17 +211,11 @@ class SocketService {
 
     // Track WebSocket connection error
     trackWebSocketError(`Connection failed: ${error.message}`, 'Socket Connection');
-
-    // Schedule reconnection with exponential backoff
-    this.scheduleReconnection();
   }
 
   private handleConnectTimeout() {
     this.connectionStats.lastError = 'Connection timeout';
     console.error('⏱️ WebSocket connection timeout');
-
-    // Schedule reconnection with exponential backoff
-    this.scheduleReconnection();
   }
 
   private handleReconnect(attemptNumber: number) {
@@ -255,9 +233,6 @@ class SocketService {
 
     // Track reconnection error
     trackWebSocketError(`Reconnection failed: ${error.message}`, 'Socket Reconnection');
-
-    // Schedule another reconnection attempt
-    this.scheduleReconnection();
   }
 
   private handleReconnectFailed() {
@@ -266,9 +241,6 @@ class SocketService {
 
     // Track complete reconnection failure
     trackError('WebSocket reconnection failed completely after all attempts', 'Socket Service', 'high');
-
-    // One final attempt after a longer delay
-    this.scheduleReconnection(true);
   }
 
   private handlePing() {
@@ -280,34 +252,6 @@ class SocketService {
     console.log(`🏓 Pong received - latency: ${latency}ms`);
   }
 
-  // Exponential backoff reconnection strategy
-  private scheduleReconnection(isFinalAttempt: boolean = false) {
-    if (this.reconnectionTimeout) {
-      clearTimeout(this.reconnectionTimeout);
-    }
-
-    const maxAttempts = this.detectMobileDevice() ? 10 : 5;
-    const currentAttempts = this.connectionStats.reconnectionAttempts;
-
-    if (currentAttempts >= maxAttempts && !isFinalAttempt) {
-      console.warn(`🛑 Max reconnection attempts (${maxAttempts}) reached`);
-      return;
-    }
-
-    // Calculate delay with exponential backoff (capped at 30 seconds)
-    const delay = Math.min(
-      1000 * Math.pow(2, currentAttempts),
-      30000
-    );
-
-    console.log(`⏳ Scheduling reconnection attempt ${currentAttempts + 1} in ${delay}ms`);
-
-    this.reconnectionTimeout = setTimeout(() => {
-      console.log(`🔄 Attempting reconnection (attempt ${currentAttempts + 1})`);
-      this.connectionStats.reconnectionAttempts++;
-      this.connect(this.userToken || undefined);
-    }, delay);
-  }
 
   // Enhanced event management with error handling
   on(event: string, callback: (data: any) => void) {
@@ -361,12 +305,6 @@ class SocketService {
   disconnect() {
     console.log('🔌 Disconnecting WebSocket...');
 
-    // Clean up any pending reconnection
-    if (this.reconnectionTimeout) {
-      clearTimeout(this.reconnectionTimeout);
-      this.reconnectionTimeout = null;
-    }
-
     if (this.socket) {
       try {
         this.socket.disconnect();
@@ -391,9 +329,10 @@ class SocketService {
   }
 
   leaveEvent() {
+    const eventId = this.currentEventId;
     this.currentEventId = null;
-    if (this.socket && this.socket.connected) {
-      this.socket.emit('leave_event', this.currentEventId);
+    if (this.socket && this.socket.connected && eventId) {
+      this.socket.emit('leave_event', eventId);
     }
   }
 
