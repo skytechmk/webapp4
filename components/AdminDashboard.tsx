@@ -98,16 +98,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     console.log('AdminDashboard processing data');
 
     // Safe data processing with error handling
-    let storageData = [];
-    let totalMedia = 0;
-    let totalViews = 0;
-    let totalDownloads = 0;
-    let activeEvents = 0;
-    let expiredEvents = 0;
-    let tierDistribution = [];
-    let roleDistribution = [];
-    let eventActivityData = [];
-    let mediaTypeData = [];
+    let storageData: { name: string; used: number; limit: number }[];
+    let totalMedia: number;
+    let totalViews: number;
+    let totalDownloads: number;
+    let activeEvents: number;
+    let expiredEvents: number;
+    let tierDistribution: { tier: string; count: number; percentage: number }[];
+    let roleDistribution: { role: string; count: number; percentage: number }[];
+    let eventActivityData: { name: string; value: number; color: string }[];
+    let mediaTypeData: { name: string; value: number; color: string }[];
+
+    // Helper function - must be declared before use in try block
+    const isExpired = (dateStr: string | null) => {
+        if (!dateStr) return false;
+        return new Date() > new Date(dateStr);
+    };
 
     try {
         console.log('AdminDashboard processing data start');
@@ -185,11 +191,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     // --- Helpers ---
     const getEventHostName = (hostId: string) => {
         return users.find(u => u.id === hostId)?.name || t('unknownUser');
-    };
-
-    const isExpired = (dateStr: string | null) => {
-        if (!dateStr) return false;
-        return new Date() > new Date(dateStr);
     };
 
     const getUserEvents = (userId: string) => {

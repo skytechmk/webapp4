@@ -303,6 +303,26 @@ class ApiClient {
         const url = `${this.baseUrl}/api/ai/generate-event-description`;
         return this.post(url, { title, theme });
     }
+
+    async getSystemStorage() {
+        const url = `${this.baseUrl}/api/system/storage`;
+        return this.get(url);
+    }
+
+    async getSystemResources() {
+        const url = `${this.baseUrl}/api/system/resources`;
+        return this.get(url);
+    }
+
+    async cleanMinIOBucket() {
+        const url = `${this.baseUrl}/api/system/clean-bucket`;
+        return this.post(url, {});
+    }
+
+    async clearUsersDatabase() {
+        const url = `${this.baseUrl}/api/system/clear-users`;
+        return this.post(url, {});
+    }
 }
 
 export const apiClient = new ApiClient();
